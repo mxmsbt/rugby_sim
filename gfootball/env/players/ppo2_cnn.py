@@ -22,11 +22,11 @@ $POLICY should be one of: cnn, impala_cnn, gfootball_impala_cnn.
 """
 
 from baselines.common.policies import build_policy
+from gfootball import _gym_compat as gym
 from gfootball.env import football_action_set
 from gfootball.env import observation_preprocessing
 from gfootball.env import player_base
 from gfootball.examples import models  
-import gym
 import joblib
 import numpy as np
 import tensorflow.compat.v1 as tf

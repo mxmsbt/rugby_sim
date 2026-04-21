@@ -41,10 +41,15 @@ PAST_STEPS_TRACE_SIZE = 100
 
 WRITE_FILES = True
 
-try:
-  import cv2
-except ImportError:
-  import cv2
+cv2 = None
+
+
+def _get_cv2():
+  global cv2
+  if cv2 is None:
+    import cv2 as cv2_module
+    cv2 = cv2_module
+  return cv2
 
 
 class DumpConfig(object):
@@ -74,7 +79,7 @@ class TextWriter(object):
     self._pos_x = int(x)
     self._pos_y = int(y) + 20
     self._color = color
-    self._font = cv2.FONT_HERSHEY_SIMPLEX
+    self._font = _get_cv2().FONT_HERSHEY_SIMPLEX
     self._lineType = 2
     self._arrow_types = ('top', 'top_right', 'right', 'bottom_right', 'bottom',
                          'bottom_left', 'left', 'top_left')
@@ -150,6 +155,7 @@ def write_players_state(writer, players_info):
 
 
 def get_frame(trace):
+  cv2 = _get_cv2()
   if 'frame' in trace._trace['observation']:
     return trace._trace['observation']['frame']
   frame = np.uint8(np.zeros((600, 800, 3)))
@@ -215,6 +221,7 @@ class ActiveDump(object):
     self._step_cnt = 0
     self._dump_file = None
     if config['write_video']:
+      cv2 = _get_cv2()
       video_format = config['video_format']
       assert video_format in ['avi', 'webm']
       self._video_suffix = '.%s' % video_format

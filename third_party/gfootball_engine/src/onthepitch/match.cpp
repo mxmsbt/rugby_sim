@@ -42,6 +42,643 @@ boost::shared_ptr<AnimCollection> Match::GetAnimCollection() {
   return GetContext().anims;
 }
 
+bool Match::IsRugbyScenario() const {
+  return GetScenarioConfig().left_team.size() == 15 &&
+         GetScenarioConfig().right_team.size() == 15;
+}
+
+e_GameMode Match::GetGameMode() const {
+  if (IsRugbyScenario()) {
+    if (IsInSetPiece()) {
+      e_GameMode desired = referee->GetBuffer().desiredSetPiece;
+      switch (desired) {
+        case e_GameMode_KickOff:
+          return e_GameMode_RugbyKickoff;
+        case e_GameMode_ThrowIn:
+          return e_GameMode_Lineout;
+        case e_GameMode_GoalKick:
+        case e_GameMode_Corner:
+          return e_GameMode_Scrum;
+        default:
+          return desired;
+      }
+    }
+    if (goalScored) {
+      return e_GameMode_Conversion;
+    }
+    if (rugbyBreakdownActive) {
+      return e_GameMode_Ruck;
+    }
+  }
+  return IsInSetPiece() ? referee->GetBuffer().desiredSetPiece
+                        : e_GameMode_Normal;
+}
+
+bool Match::CheckForRugbyScore(int &scoringTeamID) const {
+  scoringTeamID = -1;
+  if (!IsRugbyScenario() || GetBallRetainer() == nullptr) {
+    return false;
+  }
+
+  Player *carrier = GetBallRetainer();
+  Vector3 ballPos = ball->Predict(0);
+  if (fabs(ballPos.coords[1]) > pitchHalfH + lineHalfW) {
+    return false;
+  }
+
+  const int attackingSide = carrier->GetTeam()->GetDynamicSide();
+  const bool crossedTryLine =
+      (attackingSide > 0 && ballPos.coords[0] > pitchHalfW + lineHalfW) ||
+      (attackingSide < 0 && ballPos.coords[0] < -pitchHalfW - lineHalfW);
+  if (!crossedTryLine) {
+    return false;
+  }
+
+  scoringTeamID = carrier->GetTeam()->GetID();
+  return true;
+}
+
+Player *Match::FindRugbyKickAtGoalKicker(Team *team) const {
+  DO_VALIDATION;
+  if (team == nullptr) return nullptr;
+  const std::vector<Player *> &players = team->GetAllPlayers();
+  Player *best = nullptr;
+  float bestScore = -1.0f;
+  for (Player *p : players) {
+    if (p == nullptr || !p->IsActive()) continue;
+    if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
+    const float score = p->GetStat(technical_shot) * 0.7f +
+                        p->GetStat(technical_highpass) * 0.3f;
+    if (score > bestScore) {
+      bestScore = score;
+      best = p;
+    }
+  }
+  return best;
+}
+
+float Match::ComputeRugbyKickAtGoalProb(Player *kicker,
+                                        const Vector3 &markPos) const {
+  DO_VALIDATION;
+  // Posts sit at centre-y=0, attacker's try line at x = ±pitchHalfW.
+  // Distance from center-y raises the kicking angle difficulty.
+  const float lateralRatio =
+      std::min(std::fabs(markPos.coords[1]) / std::max(pitchHalfH, 0.001f),
+               1.0f);
+  // Distance from try line (behind the mark) — further away = harder.
+  const float depthRatio =
+      clamp(1.0f - std::fabs(markPos.coords[0]) / std::max(pitchHalfW, 0.001f),
+            0.0f, 1.0f);
+  float skill = 0.55f;
+  if (kicker != nullptr) {
+    skill = kicker->GetStat(technical_shot) * 0.7f +
+            kicker->GetStat(technical_highpass) * 0.3f;
+  }
+  const float prob =
+      0.82f - lateralRatio * 0.55f - depthRatio * 0.25f + (skill - 0.5f) * 0.35f;
+  return clamp(prob, 0.10f, 0.95f);
+}
+
+bool Match::ResolveRugbyKickAtGoal(Team *kickingTeam, const Vector3 &markPos,
+                                   int awardPoints, const std::string &label) {
+  DO_VALIDATION;
+  if (kickingTeam == nullptr || awardPoints <= 0) return false;
+  Player *kicker = FindRugbyKickAtGoalKicker(kickingTeam);
+  const float prob = ComputeRugbyKickAtGoalProb(kicker, markPos);
+  const bool success = boostrandom(0.0f, 1.0f) < prob;
+  if (success) {
+    const int teamID = kickingTeam->GetID();
+    matchData->SetGoalCount(teamID,
+                            matchData->GetGoalCount(teamID) + awardPoints);
+    scoreboard->SetGoalCount(teamID, matchData->GetGoalCount(teamID));
+    std::string kickerName;
+    if (kicker != nullptr) {
+      kickerName = " " + kicker->GetPlayerData()->GetLastName();
+    }
+    SpamMessage(label + " GOOD" + kickerName + "! +" +
+                    std::to_string(awardPoints),
+                3500);
+  } else {
+    SpamMessage(label + " missed", 3000);
+  }
+  return success;
+}
+
+void Match::RunRugbyAI() {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || !IsInPlay() || IsInSetPiece()) return;
+  if (goalScored || rugbyBreakdownActive) return;
+
+  Player *carrier = GetBallRetainer();
+
+  if (carrier == nullptr) {
+    // Loose ball: only the nearest 3 players from each team chase it.
+    const Vector3 ballPos = ball->Predict(0);
+    for (int teamIndex : {first_team, second_team}) {
+      std::vector<Player *> players;
+      teams[teamIndex]->GetActivePlayers(players);
+      std::sort(players.begin(), players.end(),
+                [&](Player *a, Player *b) {
+                  return (a->GetPosition() - ballPos).GetLength() <
+                         (b->GetPosition() - ballPos).GetLength();
+                });
+      int chased = 0;
+      for (Player *p : players) {
+        if (p == nullptr || !p->IsActive()) continue;
+        if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
+        if (chased >= 3) break;
+        chased++;
+        Vector3 toBall = ballPos - p->GetPosition();
+        toBall.coords[2] = 0;
+        const float d = toBall.GetLength();
+        if (d < 0.3f) continue;
+        const float step = std::min(d, 0.11f);
+        p->OffsetPosition(toBall * (step / d));
+      }
+    }
+    return;
+  }
+
+  Team *attackTeam = carrier->GetTeam();
+  Team *defendTeam = attackTeam->Opponent();
+  const signed int attackSide = attackTeam->GetDynamicSide();
+  const Vector3 carrierPos = carrier->GetPosition();
+
+  // --- Carrier: sprint toward the opposition try line. ---
+  {
+    const float sprintStep = 0.11f;  // ~11 m/s at 100 steps/s
+    Vector3 forward(attackSide * sprintStep, 0, 0);
+    // Slight drift toward the middle so the carrier doesn't walk into
+    // touch.
+    forward.coords[1] -= signSide(carrierPos.coords[1]) * 0.012f;
+    carrier->OffsetPosition(forward);
+  }
+
+  // --- Attacking shape: two closest teammates run as support backs (one
+  // each side, 2 m back), others hold a flat backline 6 m behind the
+  // carrier spread across ~25 m of pitch width. ---
+  {
+    std::vector<Player *> attackers;
+    attackTeam->GetActivePlayers(attackers);
+    // Remove carrier + GK from the pool.
+    attackers.erase(std::remove_if(attackers.begin(), attackers.end(),
+                                   [&](Player *p) {
+                                     return p == nullptr || p == carrier ||
+                                            !p->IsActive() ||
+                                            p->GetFormationEntry().role ==
+                                                e_PlayerRole_GK;
+                                   }),
+                    attackers.end());
+    // Nearest two → immediate support.
+    std::sort(attackers.begin(), attackers.end(),
+              [&](Player *a, Player *b) {
+                return (a->GetPosition() - carrierPos).GetLength() <
+                       (b->GetPosition() - carrierPos).GetLength();
+              });
+    const int supportCount =
+        std::min(2, static_cast<int>(attackers.size()));
+    for (int i = 0; i < supportCount; ++i) {
+      Player *p = attackers[i];
+      const float lateral = (i == 0 ? -1.0f : 1.0f) * 3.0f;
+      Vector3 target(carrierPos.coords[0] - attackSide * 2.5f,
+                     carrierPos.coords[1] + lateral, 0);
+      Vector3 delta = target - p->GetPosition();
+      delta.coords[2] = 0;
+      const float d = delta.GetLength();
+      if (d < 0.4f) continue;
+      const float step = std::min(d, 0.10f);
+      p->OffsetPosition(delta * (step / d));
+    }
+    // Remaining attackers: a flat line 6 m behind the carrier, spread
+    // evenly across the pitch on their team's half.
+    const int lineCount = static_cast<int>(attackers.size()) - supportCount;
+    for (int i = 0; i < lineCount; ++i) {
+      Player *p = attackers[supportCount + i];
+      const float spread = 25.0f;
+      const float slotY = -spread * 0.5f +
+                          spread * (i + 0.5f) / std::max(lineCount, 1);
+      Vector3 target(carrierPos.coords[0] - attackSide * 6.0f,
+                     slotY, 0);
+      Vector3 delta = target - p->GetPosition();
+      delta.coords[2] = 0;
+      const float d = delta.GetLength();
+      if (d < 0.5f) continue;
+      const float step = std::min(d, 0.09f);
+      p->OffsetPosition(delta * (step / d));
+    }
+  }
+
+  // --- Defensive line: flat line 2 m in front of the carrier, spread
+  // across the pitch. Closest defender charges the carrier; the rest
+  // hold the line. ---
+  {
+    std::vector<Player *> defenders;
+    defendTeam->GetActivePlayers(defenders);
+    defenders.erase(std::remove_if(defenders.begin(), defenders.end(),
+                                   [](Player *p) {
+                                     return p == nullptr || !p->IsActive() ||
+                                            p->GetFormationEntry().role ==
+                                                e_PlayerRole_GK;
+                                   }),
+                    defenders.end());
+    std::sort(defenders.begin(), defenders.end(),
+              [&](Player *a, Player *b) {
+                return (a->GetPosition() - carrierPos).GetLength() <
+                       (b->GetPosition() - carrierPos).GetLength();
+              });
+    for (int i = 0; i < static_cast<int>(defenders.size()); ++i) {
+      Player *p = defenders[i];
+      Vector3 target;
+      if (i == 0) {
+        // Nearest defender goes straight for the tackle.
+        target = carrierPos;
+      } else {
+        const float spread = 30.0f;
+        const float slotY =
+            -spread * 0.5f +
+            spread * (i - 0.5f) / std::max<int>(defenders.size() - 1, 1);
+        target = Vector3(carrierPos.coords[0] + attackSide * 2.0f, slotY, 0);
+      }
+      Vector3 delta = target - p->GetPosition();
+      delta.coords[2] = 0;
+      const float d = delta.GetLength();
+      if (d < 0.4f) continue;
+      const float step = std::min(d, (i == 0) ? 0.11f : 0.09f);
+      p->OffsetPosition(delta * (step / d));
+    }
+  }
+
+  // Carrier autopass: if a defender is within 2.2 m, release the ball so
+  // possession keeps moving rather than collapsing into a tackle.
+  float nearestDef = 1e9f;
+  {
+    std::vector<Player *> defenders2;
+    defendTeam->GetActivePlayers(defenders2);
+    for (Player *p : defenders2) {
+      if (p == nullptr || !p->IsActive()) continue;
+      if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
+      nearestDef = std::min(nearestDef,
+                            (p->GetPosition() - carrierPos).GetLength());
+    }
+    if (nearestDef < 2.2f) {
+      TryRugbyPass(attackTeam->GetID());
+    }
+  }
+
+  // Kick to touch: if carrier is deep in own half (≥15 m from halfway on
+  // their side) or is cornered with a defender close and no valid
+  // backward pass, hoof the ball toward the nearest sideline. Ball flies
+  // out → referee awards a lineout. Small per-tick probability keeps it
+  // rare enough that passes stay the default.
+  const float carrierOwnDepth =
+      -carrierPos.coords[0] * attackSide;  // >0 means in own half
+  const bool deepInOwnHalf = carrierOwnDepth > 15.0f;
+  const bool cornered = nearestDef < 2.0f;
+  const float kickProb = deepInOwnHalf ? 0.02f : (cornered ? 0.015f : 0.0f);
+  if (kickProb > 0.0f && boostrandom(0.0f, 1.0f) < kickProb) {
+    const float touchSide = signSide(carrierPos.coords[1]);
+    const Vector3 kickFrom = carrierPos + Vector3(0, 0, 1.02f);
+    Vector3 kickTarget(
+        carrierPos.coords[0] +
+            attackSide * std::min(15.0f, carrierOwnDepth + 5.0f),
+        touchSide * (pitchHalfH + 2.0f), 0.2f);
+    const float flightTime = 0.9f;
+    Vector3 velocity = (kickTarget - kickFrom) / flightTime;
+    velocity.coords[2] += 6.0f;  // high kick arc
+    ball->SetPosition(kickFrom);
+    ball->SetMomentum(velocity);
+    SetBallRetainer(0);
+    SetLastTouchTeamID(attackTeam->GetID(), e_TouchType_Intentional_Kicked);
+    // Lock passer pickup so auto-pickup doesn't snatch it on the next tick.
+    rugbyLastPasser = carrier;
+    rugbyPasserPickupLockUntil_ms = actualTime_ms + 400;
+    rugbyPendingPassReceiver = 0;
+    rugbyPassInFlightUntil_ms = 0;
+  }
+}
+
+bool Match::TryRugbyPass(int teamID) {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || !IsInPlay() || IsInSetPiece()) return false;
+  Player *carrier = GetBallRetainer();
+  if (carrier == nullptr) return false;
+  if (carrier->GetTeam()->GetID() != teamID) return false;
+  if (actualTime_ms < rugbyLastPassTime_ms + 500) return false;
+
+  Team *team = carrier->GetTeam();
+  const signed int side = team->GetDynamicSide();
+  const Vector3 carrierPos = carrier->GetPosition();
+
+  // Pick the nearest teammate who sits behind or level with the carrier —
+  // forward passes are illegal in rugby, so the AI never targets them.
+  std::vector<Player *> teammates;
+  team->GetActivePlayers(teammates);
+  Player *target = nullptr;
+  float bestDist = 22.0f;
+  for (Player *p : teammates) {
+    if (p == nullptr || p == carrier || !p->IsActive()) continue;
+    if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
+    const float forwardOffset =
+        (p->GetPosition().coords[0] - carrierPos.coords[0]) * side;
+    if (forwardOffset > 0.2f) continue;  // forward pass forbidden
+    const float dist = (p->GetPosition() - carrierPos).GetLength();
+    if (dist < 1.5f) continue;  // receiver too close for a meaningful pass
+    if (dist < bestDist) {
+      bestDist = dist;
+      target = p;
+    }
+  }
+  if (target == nullptr) return false;
+
+  const Vector3 carrierHand = carrierPos + Vector3(0, 0, 1.02f);
+  const Vector3 targetHand = target->GetPosition() + Vector3(0, 0, 1.02f);
+  Vector3 passVec = targetHand - carrierHand;
+  const float passLen = passVec.GetLength();
+  if (passLen < 0.01f) return false;
+  // Seed the ball 0.9 m along the flight line so the passer doesn't
+  // immediately re-absorb it via auto-pickup on the same tick.
+  const Vector3 from = carrierHand + passVec * (0.9f / passLen);
+  const Vector3 to = targetHand;
+  const float flightTime = 0.45f;
+  Vector3 velocity = (to - from) / flightTime;
+  velocity.coords[2] += 1.3f;  // small upward arc
+
+  ball->SetPosition(from);
+  ball->SetMomentum(velocity);
+  SetBallRetainer(0);
+  // Mark as the carrier's last touch so forward-pass detection stays
+  // anchored to them and the receiver's auto-pickup counts as a new touch.
+  SetLastTouchTeamID(team->GetID(), e_TouchType_Intentional_Nonkicked);
+  rugbyLastPassTime_ms = actualTime_ms;
+  rugbyLastPasser = carrier;
+  rugbyPasserPickupLockUntil_ms = actualTime_ms + 400;
+  rugbyPendingPassReceiver = target;
+  rugbyPassInFlightUntil_ms =
+      actualTime_ms + static_cast<unsigned long>(flightTime * 1000.0f) + 150;
+  return true;
+}
+
+bool Match::CheckForRugbyDropGoal(int &scoringTeamID) {
+  DO_VALIDATION;
+  scoringTeamID = -1;
+  if (!IsRugbyScenario() || !IsInPlay() || IsInSetPiece() || goalScored) {
+    return false;
+  }
+  if (rugbyLastKickedByTeamID < 0) return false;
+  if (actualTime_ms < rugbyLastKickTime_ms + 50) return false;
+  // Avoid re-awarding while ball still in the same kick trajectory.
+  if (actualTime_ms < rugbyLastDropGoalCheckTime_ms + 80) return false;
+  rugbyLastDropGoalCheckTime_ms = actualTime_ms;
+  // The ball must cross the try line with sufficient height through the
+  // uprights. Posts half-width is ~2.8m (5.6m apart) — use 2.8 engine units.
+  const float kPostHalfWidth = 2.8f;
+  const float kCrossbarHeight = 3.0f;
+  const Vector3 ballPos = ball->Predict(0);
+  Team *kickerTeam = teams[rugbyLastKickedByTeamID];
+  if (kickerTeam == nullptr) return false;
+  const signed int attackingSide = kickerTeam->GetDynamicSide();
+  const bool crossedTryLine =
+      (attackingSide > 0 && ballPos.coords[0] > pitchHalfW) ||
+      (attackingSide < 0 && ballPos.coords[0] < -pitchHalfW);
+  if (!crossedTryLine) return false;
+  if (ballPos.coords[2] < kCrossbarHeight) return false;
+  if (std::fabs(ballPos.coords[1]) > kPostHalfWidth) return false;
+  // Only from an open-play kick, not during a set piece restart itself.
+  scoringTeamID = kickerTeam->GetID();
+  return true;
+}
+
+float Match::GetRugbyOffsideLine(int teamID) const {
+  DO_VALIDATION;
+  if (!IsRugbyScenario()) return 0.0f;
+  if (!rugbyBreakdownActive || rugbyBreakdownTeam == 0) return rugbyBreakdownPos.coords[0];
+
+  const signed int protected_side = rugbyBreakdownTeam->GetDynamicSide();
+  if (teamID == rugbyBreakdownTeam->GetID()) {
+    return rugbyBreakdownPos.coords[0] - protected_side * 0.9f;
+  }
+  return rugbyBreakdownPos.coords[0] + protected_side * 0.4f;
+}
+
+bool Match::IsRugbyPlayerOffsideAtBreakdown(Player *player) const {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || !rugbyBreakdownActive || rugbyBreakdownTeam == 0 ||
+      player == nullptr || !player->IsActive()) {
+    return false;
+  }
+  if (player == rugbyTackledPlayer || player == rugbyTackler) {
+    return false;
+  }
+  if (player == rugbyRecycleReceiver) {
+    return false;
+  }
+  Team *team = player->GetTeam();
+  const float offsideLine = GetRugbyOffsideLine(team->GetID());
+  const float signedDistance =
+      (player->GetPosition().coords[0] - offsideLine) * team->GetDynamicSide();
+  return signedDistance > 0.02f;
+}
+
+bool Match::IsRugbyPlayerPenaltyEligibleAtBreakdown(Player *player) const {
+  DO_VALIDATION;
+  if (!IsRugbyPlayerOffsideAtBreakdown(player)) {
+    return false;
+  }
+  const Vector3 offset = player->GetPosition() - rugbyBreakdownPos;
+  const float lateralDistance = std::fabs(offset.coords[1]);
+  const float depthDistance = std::fabs(offset.coords[0]);
+  return lateralDistance < 0.45f && depthDistance < 1.2f;
+}
+
+void Match::EnforceRugbyBreakdownOffside() {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || !rugbyBreakdownActive || rugbyBreakdownTeam == 0) {
+    return;
+  }
+
+  for (int teamIndex : {first_team, second_team}) {
+    const std::vector<Player *> &players = teams[teamIndex]->GetAllPlayers();
+    const float offsideLine = GetRugbyOffsideLine(teams[teamIndex]->GetID());
+    const float legalBuffer = 0.02f;
+    const float targetX =
+        offsideLine - teams[teamIndex]->GetDynamicSide() * legalBuffer;
+    for (Player *player : players) {
+      if (!IsRugbyPlayerOffsideAtBreakdown(player)) {
+        continue;
+      }
+      Vector3 offset(0);
+      offset.coords[0] = targetX - player->GetPosition().coords[0];
+      player->OffsetPosition(offset);
+    }
+  }
+}
+
+void Match::RegisterRugbyTackle(Player *carrier, Player *tackler, bool force) {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || (IsInSetPiece() && !force)) return;
+  if (carrier == nullptr || tackler == nullptr) return;
+  if (!force && carrier != GetBallRetainer()) return;
+  if (carrier->GetTeam() == tackler->GetTeam()) return;
+  if (goalScored || rugbyBreakdownActive) return;
+
+  rugbyBreakdownActive = true;
+  rugbyBreakdownStartTime_ms = actualTime_ms;
+  rugbyBreakdownPos = carrier->GetPosition();
+  rugbyBreakdownPos.coords[2] = 0.0f;
+  rugbyBreakdownTeam = carrier->GetTeam();
+  rugbyTackledPlayer = carrier;
+  rugbyTackler = tackler;
+  rugbyRecycleReceiver = 0;
+  rugbyRecycleStartTime_ms = 0;
+  rugbyProtectedTeam = carrier->GetTeam();
+  rugbyPossessionProtectionUntil_ms = actualTime_ms + 900;
+
+  Vector3 groundedBallPos = rugbyBreakdownPos;
+  groundedBallPos.coords[0] -= carrier->GetTeam()->GetDynamicSide() * 0.9f;
+  groundedBallPos.coords[2] = 0.11f;
+  ball->SetPosition(groundedBallPos);
+  ball->SetMomentum(Vector3(0));
+  SetBallRetainer(0);
+  designatedPossessionPlayer = carrier;
+  rugbyPendingInitialBreakdown = false;
+  SpamMessage("Tackle", 800);
+}
+
+Player *Match::GetRugbyRecycleTarget() const {
+  DO_VALIDATION;
+  if (!rugbyBreakdownActive || rugbyBreakdownTeam == 0) return nullptr;
+
+  std::vector<Player *> candidates;
+  AI_GetClosestPlayers(rugbyBreakdownTeam, rugbyBreakdownPos, false, candidates,
+                       rugbyBreakdownTeam->GetAllPlayers().size());
+  const signed int side = rugbyBreakdownTeam->GetDynamicSide();
+  for (Player *candidate : candidates) {
+    if (candidate == nullptr || !candidate->IsActive()) continue;
+    if (candidate == rugbyTackledPlayer) continue;
+    if (candidate->GetFormationEntry().role == e_PlayerRole_GK) continue;
+    if ((candidate->GetPosition().coords[0] - rugbyBreakdownPos.coords[0]) *
+            side <=
+        1.0f) {
+      return candidate;
+    }
+  }
+
+  if (rugbyTackledPlayer != nullptr && rugbyTackledPlayer->IsActive()) {
+    return rugbyTackledPlayer;
+  }
+  return rugbyBreakdownTeam->GetDesignatedTeamPossessionPlayer();
+}
+
+void Match::UpdateRugbyPhase() {
+  DO_VALIDATION;
+  if (!IsRugbyScenario() || !rugbyBreakdownActive) return;
+
+  if (goalScored) {
+    rugbyBreakdownActive = false;
+    rugbyBreakdownTeam = 0;
+    rugbyTackledPlayer = 0;
+    rugbyTackler = 0;
+    rugbyRecycleReceiver = 0;
+    rugbyRecycleStartTime_ms = 0;
+    return;
+  }
+
+  // Soft-magnet nearby players toward the breakdown so the ruck visibly
+  // clumps up. Only pulls players already close enough to be committed;
+  // keeps further-out defenders/attackers on their line so the offside
+  // enforcement pass that ran earlier this tick isn't immediately undone.
+  {
+    const float commitRadius = 3.2f;
+    const float maxStep = 0.04f;
+    for (int teamIndex : {first_team, second_team}) {
+      std::vector<Player *> players;
+      teams[teamIndex]->GetActivePlayers(players);
+      for (Player *player : players) {
+        if (player == nullptr || !player->IsActive()) continue;
+        if (player == rugbyTackledPlayer || player == rugbyTackler) continue;
+        if (player == rugbyRecycleReceiver) continue;
+        if (player == GetBallRetainer()) continue;
+        if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
+        Vector3 delta = rugbyBreakdownPos - player->GetPosition();
+        delta.coords[2] = 0.0f;
+        const float distance = delta.GetLength();
+        if (distance > commitRadius || distance < 0.3f) continue;
+        Vector3 step = delta * 0.10f;
+        const float stepLen = step.GetLength();
+        if (stepLen > maxStep) step = step * (maxStep / stepLen);
+        player->OffsetPosition(step);
+      }
+    }
+  }
+
+  const signed int side = rugbyBreakdownTeam->GetDynamicSide();
+  Vector3 groundedBallPos = rugbyBreakdownPos;
+  groundedBallPos.coords[0] -= side * 0.9f;
+  groundedBallPos.coords[2] = 0.11f;
+
+  if (rugbyRecycleReceiver == nullptr) {
+    ball->SetPosition(groundedBallPos);
+    ball->SetMomentum(Vector3(0));
+    SetBallRetainer(0);
+  }
+
+  if (actualTime_ms < rugbyBreakdownStartTime_ms + 700 &&
+      rugbyRecycleReceiver == nullptr) {
+    return;
+  }
+
+  if (rugbyRecycleReceiver == nullptr) {
+    Player *receiver = GetRugbyRecycleTarget();
+    if (receiver != nullptr) {
+      rugbyRecycleReceiver = receiver;
+      rugbyRecycleStartTime_ms = actualTime_ms;
+      designatedPossessionPlayer = receiver;
+      SetBallRetainer(receiver);
+      Vector3 recyclePos = receiver->GetPosition();
+      recyclePos.coords[2] = 0.11f;
+      ball->SetPosition(recyclePos);
+      ball->SetMomentum(Vector3(0));
+      rugbyProtectedTeam = receiver->GetTeam();
+      rugbyPossessionProtectionUntil_ms = actualTime_ms + 900;
+      SetLastTouchTeamID(receiver->GetTeam()->GetID(),
+                         e_TouchType_Intentional_Nonkicked);
+    }
+    return;
+  }
+
+  const bool receiverStillValid =
+      rugbyRecycleReceiver != nullptr && rugbyRecycleReceiver->IsActive() &&
+      rugbyRecycleReceiver->GetTeam() == rugbyBreakdownTeam;
+  if (!receiverStillValid) {
+    rugbyRecycleReceiver = 0;
+    return;
+  }
+
+  if (GetBallRetainer() != rugbyRecycleReceiver) {
+    SetBallRetainer(rugbyRecycleReceiver);
+  }
+  designatedPossessionPlayer = rugbyRecycleReceiver;
+
+  const Vector3 liftVector =
+      ball->Predict(0).Get2D() - groundedBallPos.Get2D();
+  const bool ballLiftedFromBase = liftVector.GetLength() > 0.35f;
+  const bool receiverCarryingAway =
+      (rugbyRecycleReceiver->GetPosition().coords[0] - rugbyBreakdownPos.coords[0]) *
+          side >
+      0.2f;
+  if (actualTime_ms < rugbyRecycleStartTime_ms + 150 ||
+      (!ballLiftedFromBase && !receiverCarryingAway)) {
+    return;
+  }
+
+  rugbyBreakdownActive = false;
+  rugbyBreakdownTeam = 0;
+  rugbyTackledPlayer = 0;
+  rugbyTackler = 0;
+  rugbyRecycleReceiver = 0;
+  rugbyRecycleStartTime_ms = 0;
+}
+
 const std::vector<Vector3> &Match::GetAnimPositionCache(Animation *anim) const {
   return GetContext().animPositionCache.find(anim)->second;
 }
@@ -131,6 +768,8 @@ Match::Match(MatchData *matchData, const std::vector<AIControlledKeyboard *> &co
   teams[first_team]->GetActivePlayers(activePlayers);
   designatedPossessionPlayer = activePlayers.at(0);
   ballRetainer = 0;
+  rugbyPendingInitialBreakdown = GetScenarioConfig().rugby_force_initial_breakdown;
+  rugbyPendingInitialTry = GetScenarioConfig().rugby_force_initial_try;
 
 
   // officials
@@ -142,7 +781,6 @@ Match::Match(MatchData *matchData, const std::vector<AIControlledKeyboard *> &co
 
   dynamicNode->AddObject(officials->GetYellowCardGeom());
   dynamicNode->AddObject(officials->GetRedCardGeom());
-
 
   // camera
 
@@ -238,7 +876,6 @@ Match::Match(MatchData *matchData, const std::vector<AIControlledKeyboard *> &co
 
   // everybody hates him, this poor bloke
   referee = new Referee(this, animations);
-
 
   // GUI
   Gui2Root *root = menuTask->GetWindowManager()->GetRoot();
@@ -474,6 +1111,26 @@ void Match::ResetSituation(const Vector3 &focusPos) {
   lastTouchTeamID = -1;
   lastGoalScorer = 0;
   bestPossessionTeam = 0;
+  rugbyBreakdownActive = false;
+  rugbyPendingInitialBreakdown = GetScenarioConfig().rugby_force_initial_breakdown;
+  rugbyBreakdownStartTime_ms = 0;
+  rugbyBreakdownPos = Vector3(0);
+  rugbyBreakdownTeam = 0;
+  rugbyTackledPlayer = 0;
+  rugbyTackler = 0;
+  rugbyRecycleReceiver = 0;
+  rugbyRecycleStartTime_ms = 0;
+  rugbyProtectedTeam = 0;
+  rugbyPossessionProtectionUntil_ms = 0;
+  rugbyConversionAttempted = false;
+  rugbyLastKickedByTeamID = -1;
+  rugbyLastKickTime_ms = 0;
+  rugbyLastDropGoalCheckTime_ms = 0;
+  rugbyLastPassTime_ms = 0;
+  rugbyLastPasser = 0;
+  rugbyPasserPickupLockUntil_ms = 0;
+  rugbyPendingPassReceiver = 0;
+  rugbyPassInFlightUntil_ms = 0;
 
   possessionSideHistory.Clear();
 
@@ -483,6 +1140,26 @@ void Match::ResetSituation(const Vector3 &focusPos) {
   teams[first_team]->ResetSituation(focusPos);
   teams[second_team]->ResetSituation(focusPos);
   officials->GetReferee()->ResetSituation(focusPos);
+
+  if (GetScenarioConfig().initial_ball_owner_team >= 0 &&
+      GetScenarioConfig().initial_ball_owner_team <= 1) {
+    Team *ownerTeam = teams[GetScenarioConfig().initial_ball_owner_team];
+    const int playerIndex = GetScenarioConfig().initial_ball_owner_player;
+    const std::vector<Player *> &ownerPlayers = ownerTeam->GetAllPlayers();
+    if (playerIndex >= 0 && playerIndex < (signed int)ownerPlayers.size()) {
+      Player *owner = ownerPlayers[playerIndex];
+      if (owner != nullptr && owner->IsActive()) {
+        Vector3 carriedBallPos = owner->GetPosition();
+        carriedBallPos.coords[2] = 0.11f;
+        ball->SetPosition(carriedBallPos);
+        ball->SetMomentum(Vector3(0));
+        ownerTeam->UpdateDesignatedTeamPossessionPlayer();
+        designatedPossessionPlayer = owner;
+        SetBallRetainer(owner);
+        ownerTeam->SetLastTouchPlayer(owner, e_TouchType_Intentional_Nonkicked);
+      }
+    }
+  }
 }
 
 void Match::SetMatchPhase(e_MatchPhase newMatchPhase) {
@@ -732,6 +1409,16 @@ void Match::ProcessState(EnvState* state) {
   state->process(bestPossessionTeam);
   state->process(designatedPossessionPlayer);
   state->process(ballRetainer);
+  state->process(rugbyBreakdownActive);
+  state->process(rugbyBreakdownStartTime_ms);
+  state->process(rugbyBreakdownPos);
+  state->process(rugbyBreakdownTeam);
+  state->process(rugbyTackledPlayer);
+  state->process(rugbyTackler);
+  state->process(rugbyRecycleReceiver);
+  state->process(rugbyRecycleStartTime_ms);
+  state->process(rugbyProtectedTeam);
+  state->process(rugbyPossessionProtectionUntil_ms);
   possessionSideHistory.ProcessState(state);
   state->process(autoUpdateIngameCamera);
   state->setValidate(false);
@@ -816,13 +1503,58 @@ void Match::GetState(SharedInfo *state) {
       (ball->GetMovement() / GetGameConfig().physics_steps_per_frame).coords;
   state->ball_owned_player = -1;
   state->ball_owned_team = -1;
+  state->rugby_breakdown_active = rugbyBreakdownActive;
+  state->rugby_pending_initial_breakdown = rugbyPendingInitialBreakdown;
+  state->rugby_force_initial_breakdown_config =
+      GetScenarioConfig().rugby_force_initial_breakdown;
+  state->rugby_breakdown_team =
+      rugbyBreakdownTeam ? rugbyBreakdownTeam->GetID() : -1;
+  state->rugby_breakdown_position = rugbyBreakdownPos.coords;
+  state->rugby_recycle_receiver_team =
+      rugbyRecycleReceiver ? rugbyRecycleReceiver->GetTeam()->GetID() : -1;
+  state->rugby_recycle_receiver_position =
+      rugbyRecycleReceiver ? rugbyRecycleReceiver->GetPosition().coords
+                           : Vector3(0).coords;
+  state->rugby_possession_protected_team =
+      rugbyProtectedTeam ? rugbyProtectedTeam->GetID() : -1;
+  state->rugby_offside_line = GetRugbyOffsideLine(first_team);
+  state->rugby_ball_retainer_team =
+      ballRetainer ? ballRetainer->GetTeam()->GetID() : -1;
+  state->rugby_designated_possession_team =
+      designatedPossessionPlayer ? designatedPossessionPlayer->GetTeam()->GetID()
+                                 : -1;
+  state->rugby_is_in_set_piece = IsInSetPiece();
+  state->rugby_lineout_active =
+      IsInSetPiece() && referee->GetBuffer().desiredSetPiece == e_GameMode_ThrowIn;
+  state->rugby_lineout_team =
+      state->rugby_lineout_active ? referee->GetBuffer().teamID : -1;
+  state->rugby_lineout_winning_team =
+      actualTime_ms <= rugbyLastLineoutResolveTime_ms + 1200
+          ? rugbyLastLineoutWinningTeam
+          : -1;
+  state->rugby_scrum_active =
+      IsInSetPiece() &&
+      (referee->GetBuffer().desiredSetPiece == e_GameMode_GoalKick ||
+       referee->GetBuffer().desiredSetPiece == e_GameMode_Corner);
+  state->rugby_scrum_team =
+      state->rugby_scrum_active ? referee->GetBuffer().teamID : -1;
+  state->rugby_scrum_winning_team =
+      actualTime_ms <= rugbyLastScrumResolveTime_ms + 1200
+          ? rugbyLastScrumWinningTeam
+          : -1;
+  state->rugby_left_team_offside_line = GetRugbyOffsideLine(0);
+  state->rugby_right_team_offside_line = GetRugbyOffsideLine(1);
+  state->rugby_left_team_side = teams[0]->GetDynamicSide();
+  state->rugby_right_team_side = teams[1]->GetDynamicSide();
+  state->rugby_actual_time_ms = actualTime_ms;
+  state->rugby_breakdown_start_time_ms = rugbyBreakdownStartTime_ms;
   state->left_goals = GetScore(0);
   state->right_goals = GetScore(1);
   // Report a step before game starts as in play, so that we know which players
   // are controlled by agents and which are controlled using action_builtin_ai.
   // 1900 = 2000 (game start) - 100 (single step time).
   state->is_in_play = IsInPlay() || GetActualTime_ms() == 1900;
-  state->game_mode = IsInSetPiece() ? referee->GetBuffer().desiredSetPiece : e_GameMode_Normal;
+  state->game_mode = GetGameMode();
   state->left_controllers.clear();
   state->left_controllers.resize(GetScenarioConfig().left_team.size());
   state->right_controllers.clear();
@@ -848,6 +1580,49 @@ bool Match::Process() {
   DO_VALIDATION;
   bool reverse = GetScenarioConfig().reverse_team_processing;
   DO_VALIDATION;
+
+  if (IsRugbyScenario() && rugbyPendingInitialTry && !goalScored &&
+      !IsInSetPiece() && actualTime_ms <= 500) {
+    Player *carrier = nullptr;
+    if (GetScenarioConfig().initial_ball_owner_team >= 0 &&
+        GetScenarioConfig().initial_ball_owner_team <= 1) {
+      Team *ownerTeam = teams[GetScenarioConfig().initial_ball_owner_team];
+      const int playerIndex = GetScenarioConfig().initial_ball_owner_player;
+      const std::vector<Player *> &ownerPlayers = ownerTeam->GetAllPlayers();
+      if (playerIndex >= 0 && playerIndex < (signed int)ownerPlayers.size()) {
+        carrier = ownerPlayers[playerIndex];
+      }
+    }
+    if (carrier == nullptr) {
+      carrier = designatedPossessionPlayer;
+    }
+    if (carrier == nullptr && GetBestPossessionTeam() != nullptr) {
+      carrier = GetBestPossessionTeam()->GetDesignatedTeamPossessionPlayer();
+    }
+    if (carrier != nullptr) {
+      Team *scoringTeam = carrier->GetTeam();
+      const int scoringTeamID = scoringTeam->GetID();
+      matchData->SetGoalCount(scoringTeamID,
+                              matchData->GetGoalCount(scoringTeamID) + 5);
+      scoreboard->SetGoalCount(scoringTeamID,
+                               matchData->GetGoalCount(scoringTeamID));
+      goalScored = true;
+      lastGoalTeam = scoringTeam;
+      lastGoalScorer = carrier;
+      scoringTeam->GetController()->UpdateTactics();
+      Vector3 conversionMark = ball->Predict(0);
+      conversionMark.coords[0] = scoringTeam->GetDynamicSide() * pitchHalfW;
+      conversionMark.coords[2] = 0.0f;
+      ResolveRugbyKickAtGoal(scoringTeam, conversionMark, 2, "Conversion");
+      rugbyConversionAttempted = true;
+      referee->StartRugbyKickoffRestart(
+          scoringTeamID,
+          "TRY for " + GetLastGoalTeam()->GetTeamData()->GetName() + "! " +
+              lastGoalScorer->GetPlayerData()->GetLastName() +
+              " grounds the ball!");
+      rugbyPendingInitialTry = false;
+    }
+  }
 
   Mirror(reverse, !reverse, reverse);
   if (IsInPlay()) {
@@ -923,34 +1698,110 @@ bool Match::Process() {
 
   Mirror(reverse, !reverse, reverse);
   CheckHumanoidCollisions();
+  EnforceRugbyBreakdownOffside();
+  const bool rugbyBootstrapWindow =
+      rugbyPendingInitialBreakdown
+          ? (actualTime_ms >= 1900 && actualTime_ms <= 2300)
+          : (actualTime_ms <= 500);
+  if (IsRugbyScenario() && !rugbyBreakdownActive && !goalScored &&
+      rugbyBootstrapWindow) {
+    Player *carrier = GetBallRetainer();
+    if (carrier == nullptr && rugbyPendingInitialBreakdown) {
+      carrier = designatedPossessionPlayer;
+      if (GetBestPossessionTeam() != nullptr) {
+        carrier = GetBestPossessionTeam()->GetDesignatedTeamPossessionPlayer();
+      }
+    }
+    if (carrier != nullptr) {
+      Team *carrier_team = carrier->GetTeam();
+      Team *defending_team = carrier_team->Opponent();
+      Player *nearest_defender = AI_GetClosestPlayer(
+          defending_team, carrier->GetPosition(), false);
+      const float bootstrapDistance =
+          rugbyPendingInitialBreakdown ? 1.5f : 0.05f;
+      if (nearest_defender != nullptr &&
+          (nearest_defender->GetPosition() - carrier->GetPosition())
+                  .GetLength() <
+              bootstrapDistance) {
+        RegisterRugbyTackle(carrier, nearest_defender,
+                            rugbyPendingInitialBreakdown);
+      }
+    }
+  }
+  UpdateRugbyPhase();
+  RunRugbyAI();
 
   BumpActualTime_ms(10);
 
   // check for goals
   bool first_team_goal = false;
   bool second_team_goal = false;
+  bool rugby_score = false;
+  int rugby_scoring_team = -1;
+  bool rugby_drop_goal = false;
+  int rugby_drop_goal_team = -1;
   if (IsInPlay()) {
-    first_team_goal =
-        CheckForGoal(teams[first_team]->GetDynamicSide(), previousBallPos);
-    second_team_goal =
-        CheckForGoal(teams[second_team]->GetDynamicSide(), previousBallPos);
+    if (IsRugbyScenario()) {
+      rugby_score = CheckForRugbyScore(rugby_scoring_team);
+      if (!rugby_score) {
+        rugby_drop_goal = CheckForRugbyDropGoal(rugby_drop_goal_team);
+        if (rugby_drop_goal) {
+          rugby_score = true;
+          rugby_scoring_team = rugby_drop_goal_team;
+        }
+      }
+    } else {
+      first_team_goal =
+          CheckForGoal(teams[first_team]->GetDynamicSide(), previousBallPos);
+      second_team_goal =
+          CheckForGoal(teams[second_team]->GetDynamicSide(), previousBallPos);
+    }
   }
-  bool goal = first_team_goal | second_team_goal;
+  bool goal = first_team_goal | second_team_goal | rugby_score;
   ballIsInGoal |= goal;
   Mirror(reverse, !reverse, reverse);
   if (IsInPlay()) {
     DO_VALIDATION;
     if (goal) {
-      int team = first_team_goal ? second_team : first_team;
+      int team = rugby_score
+                     ? rugby_scoring_team
+                     : (first_team_goal ? second_team : first_team);
       DO_VALIDATION;
+      const int awardedPoints =
+          rugby_drop_goal ? 3 : (rugby_score ? 5 : 1);
       matchData->SetGoalCount(teams[team]->GetID(),
-                              matchData->GetGoalCount(team) + 1);
+                              matchData->GetGoalCount(team) + awardedPoints);
       scoreboard->SetGoalCount(team, matchData->GetGoalCount(team));
       goalScored = true;
       lastGoalTeam = teams[team];
       teams[team]->GetController()->UpdateTactics();
     }
-    if (first_team_goal || second_team_goal) {
+    if (rugby_drop_goal) {
+      lastGoalScorer = 0;
+      SpamMessage("DROP GOAL for " +
+                      GetLastGoalTeam()->GetTeamData()->GetName() + "! +3",
+                  4000);
+    } else if (rugby_score) {
+      lastGoalScorer = GetBallRetainer();
+      if (lastGoalScorer) {
+        SpamMessage("TRY for " + GetLastGoalTeam()->GetTeamData()->GetName() +
+                        "! " +
+                        lastGoalScorer->GetPlayerData()->GetLastName() +
+                        " grounds the ball!",
+                    4000);
+      } else {
+        SpamMessage("TRY!", 4000);
+      }
+      if (!rugbyConversionAttempted) {
+        Vector3 conversionMark = ball->Predict(0);
+        conversionMark.coords[0] =
+            teams[rugby_scoring_team]->GetDynamicSide() * pitchHalfW;
+        conversionMark.coords[2] = 0.0f;
+        ResolveRugbyKickAtGoal(teams[rugby_scoring_team], conversionMark, 2,
+                               "Conversion");
+        rugbyConversionAttempted = true;
+      }
+    } else if (first_team_goal || second_team_goal) {
       DO_VALIDATION;
 
       // find out who scored
@@ -1178,6 +2029,12 @@ void Match::CalculateBestPossessionTeamID() {
 
 void Match::CheckHumanoidCollisions() {
   DO_VALIDATION;
+  // During rugby set pieces (scrum / lineout / kickoff) the pack is
+  // deliberately bound together — the bounce-apart physics that works for
+  // open play wrecks the formation, leaving a loose puddle of players
+  // instead of a tight pack. Skip the collision pass in that window.
+  if (IsRugbyScenario() && IsInSetPiece()) return;
+
   std::vector<Player*> players;
 
   GetTeam(first_team)->GetActivePlayers(players);
@@ -1606,6 +2463,59 @@ void Match::CheckBallCollisions() {
   GetTeam(first_team)->GetActivePlayers(players);
   GetTeam(second_team)->GetActivePlayers(players);
 
+  // Rugby auto-pickup: a loose ball on the pitch snaps to the closest player
+  // within 0.7m when there is no current retainer, the ball is low enough to
+  // be reached, and the protection window for the opposite team is over.
+  // Rugby is a hands game — players shouldn't be kicking balls at their
+  // feet like a football.
+  if (IsRugbyScenario() && GetBallRetainer() == nullptr &&
+      IsInPlay() && !IsInSetPiece() && !goalScored) {
+    const Vector3 ballPos = ball->Predict(0);
+    if (ballPos.coords[2] < 1.6f) {
+      Player *closest = nullptr;
+      float closestDistance = 1.2f;
+      // While a rugby pass is in flight only the intended receiver is
+      // allowed to auto-pickup. This prevents a running teammate ahead of
+      // the thrower from snatching the ball, which the referee would
+      // otherwise flag as a forward pass.
+      const bool passInFlight =
+          rugbyPendingPassReceiver != nullptr &&
+          actualTime_ms < rugbyPassInFlightUntil_ms;
+      for (Player *p : players) {
+        if (p == nullptr || !p->IsActive()) continue;
+        if (IsRugbyRetainBlockedFor(p->GetTeam())) continue;
+        // Don't let the passer re-absorb their own pass before it has time
+        // to reach the target.
+        if (p == rugbyLastPasser &&
+            actualTime_ms < rugbyPasserPickupLockUntil_ms) {
+          continue;
+        }
+        if (passInFlight && p != rugbyPendingPassReceiver) continue;
+        // Ground-plane distance: the ball can be anywhere in the player's
+        // reach envelope (ankle to chest). We compare only X/Y.
+        const Vector3 delta2D =
+            Vector3(p->GetPosition().coords[0] - ballPos.coords[0],
+                    p->GetPosition().coords[1] - ballPos.coords[1], 0.0f);
+        const float distance = delta2D.GetLength();
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = p;
+        }
+      }
+      if (closest != nullptr) {
+        SetBallRetainer(closest);
+        ball->Touch(Vector3(0));
+        ball->SetMomentum(Vector3(0));
+        SetLastTouchTeamID(closest->GetTeam()->GetID(),
+                           e_TouchType_Intentional_Nonkicked);
+        if (closest == rugbyPendingPassReceiver) {
+          rugbyPendingPassReceiver = 0;
+          rugbyPassInFlightUntil_ms = 0;
+        }
+      }
+    }
+  }
+
   Vector3 bounceVec;
   float bias = 0.0;
   int bounceCount = 0; // this shit is shit, average properly in combination with bias or something like that
@@ -1765,6 +2675,13 @@ void Match::PrepareGoalNetting() {
 
 void Match::UpdateGoalNetting(bool ballTouchesNet) {
   DO_VALIDATION;
+
+  // Rugby has no goal netting — the H-posts are rigid, so skip the
+  // football-era deformation pass entirely.
+  if (IsRugbyScenario()) {
+    nettingHasChanged = false;
+    return;
+  }
 
   nettingHasChanged = false;
   int sideID = (ball->GetBallGeom()->GetPosition().coords[0] < 0) ? 0 : 1;

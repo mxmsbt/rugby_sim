@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Install Google Research Football."""
+"""Install rugby_sim."""
 
 import os
 import sys
@@ -22,6 +22,8 @@ import shutil
 from setuptools import find_packages
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
+
+REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
 class CMakeExtension(Extension):
@@ -45,13 +47,15 @@ class CustomBuild(build_ext):
   def run_unix(self):
     if os.path.exists(self.build_lib):
       dest_dir = os.path.join(self.build_lib, 'gfootball_engine')
+      os.makedirs(dest_dir, exist_ok=True)
     else:
       # For the development install (pip install -e .)
       # gfootball_engine module has to be located in the project root directory.
       dest_dir = "gfootball_engine"
       if not os.path.exists(dest_dir):
         try:
-          os.symlink(os.path.abspath('third_party/gfootball_engine'), dest_dir)
+          os.symlink(os.path.join(REPO_ROOT, 'third_party/gfootball_engine'),
+                     dest_dir)
         except:
           raise OSError("Google Research Football: Could not create symlink to %s"
                         "for the development install." % dest_dir)
@@ -63,21 +67,32 @@ class CustomBuild(build_ext):
                        'variable as int. Please set it to 0 or 1')
 
     if use_prebuilt_lib:
-      if os.system(
-            'cp third_party/gfootball_engine/lib/prebuilt_gameplayfootball.so ' +
-            dest_dir + '/_gameplayfootball.so'):
+      prebuilt = os.path.join(
+          REPO_ROOT,
+          'third_party/gfootball_engine/lib/prebuilt_gameplayfootball.so')
+      if os.system(f'cp "{prebuilt}" "{dest_dir}/_gameplayfootball.so"'):
         raise OSError(
             'Failed to copy pre-built library to a final destination %s.' %
             dest_dir)
     else:
       # Compile the engine
-      if os.system('gfootball/build_game_engine.sh'):
+      build_env = (
+          f'PYTHON_EXECUTABLE="{sys.executable}" '
+          f'PYTHON_ROOT_DIR="{sys.prefix}"')
+      if os.system(
+          f'{build_env} bash "{os.path.join(REPO_ROOT, "gfootball/build_game_engine.sh")}"'):
         raise OSError('Google Research Football compilation failed')
       # There might be multiple compiled modules (e.g. for different python versions)
       # Copy them all
-      libs = glob.glob(f'third_party/gfootball_engine/_gameplayfootball*.so')
+      libs = glob.glob(os.path.join(REPO_ROOT,
+                                    'third_party/gfootball_engine/_gameplayfootball*.so'))
+      if not libs:
+        raise OSError(
+            'RugbySim compilation did not produce _gameplayfootball*.so. '
+            'Check the CMake output for missing native dependencies.')
       copy_compiled_libs(libs, dest_dir)
     copy_fonts(dest_dir)
+    copy_fonts(os.path.join(REPO_ROOT, 'third_party/gfootball_engine'))
 
   def run_windows(self):
     guide_message = 'Please follow the guide on how to install prerequisites: ' \
@@ -87,6 +102,7 @@ class CustomBuild(build_ext):
 
     if os.path.exists(self.build_lib):
       dest_dir = os.path.join(self.build_lib, 'gfootball_engine')
+      os.makedirs(dest_dir, exist_ok=True)
     else:
       # For the development install (pip install -e .)
       # gfootball_engine module has to be located in the project root directory.
@@ -113,6 +129,7 @@ class CustomBuild(build_ext):
     libs = glob.glob(f'{lib_path}*.pyd') + glob.glob(f'{lib_path}*.dll')
     copy_compiled_libs(libs, dest_dir)
     copy_fonts(dest_dir)
+    copy_fonts(os.path.join(REPO_ROOT, 'third_party/gfootball_engine'))
 
 
 def copy_compiled_libs(libs, dest_dir):
@@ -129,7 +146,7 @@ def copy_fonts(dest_dir):
   """Copy fonts to the destination directory."""
   dst_fonts = os.path.join(dest_dir, "fonts")
   if not os.path.exists(dst_fonts):
-    shutil.copytree("third_party/fonts", dst_fonts)
+    shutil.copytree(os.path.join(REPO_ROOT, "third_party/fonts"), dst_fonts)
 
 
 def process_develop_setup():
@@ -166,16 +183,17 @@ process_develop_setup()
 packages = find_packages() + find_packages('third_party')
 
 setup(
-    name='gfootball',
-    version='2.10.3',
-    description=('Google Research Football - RL environment based on '
-                 'open-source game Gameplay Football'),
-    long_description=('Please see [our GitHub page](https://github.com/google-research/football) '
-                      'for details.'),
+    name='rugby_sim',
+    version='0.1.0a0',
+    description=('RugbySim - a 15v15 rugby environment and simulation engine '
+                 'forked from Google Research Football'),
+    long_description=('RugbySim is an open-source rugby union simulation '
+                      'project built on top of the Google Research Football '
+                      'engine and packaging layout.'),
     long_description_content_type='text/markdown',
-    author='Google LLC',
-    author_email='no-reply@google.com',
-    url='https://github.com/google-research/football',
+    author='mxmsbt and upstream contributors',
+    author_email='no-reply@example.com',
+    url='https://github.com/mxmsbt/rugby_sim',
     license='Apache 2.0',
     packages=packages,
     package_dir={'gfootball_engine': 'third_party/gfootball_engine'},
@@ -185,12 +203,13 @@ setup(
         'opencv-python',
         'psutil',
         'numpy',
-        'gym<=0.21.0',
+        'gymnasium>=0.29,<1.1',
         'absl-py',
+        'six',
         'wheel',
     ],
     include_package_data=True,
-    keywords='gfootball reinforcement-learning python machine learning',
+    keywords='rugby simulation reinforcement-learning python machine learning',
     ext_modules=[CMakeExtension('brainball_cpp_engine')],
     cmdclass={'build_ext': CustomBuild},
 )

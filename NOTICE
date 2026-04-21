@@ -1,0 +1,26 @@
+RugbySim
+Copyright 2025 mxmsbt
+
+This product includes software originally developed by Google LLC as part of
+the Google Research Football project:
+
+  https://github.com/google-research/football
+
+That upstream project is licensed under the Apache License, Version 2.0.
+A copy of the license is available in the LICENSE file at the root of this
+repository.
+
+Portions of the upstream Football engine are themselves based on the
+"Gameplay Football" engine by Bastiaan Konings Schuiling (2008–2015), which
+the author dedicated to the public domain. Modified and redistributed source
+files preserve their original copyright notices and license headers where
+those were present in the upstream project.
+
+RugbySim is a fork that replaces the football match logic, match physics,
+AI behaviours, set-piece handling, and visual assets (pitch overlay, ball
+mesh, goalposts, kits, and in-game radar) with rugby-union equivalents,
+while retaining the underlying rendering + reinforcement-learning
+scaffolding of the upstream project.
+
+See UPSTREAM.md for a summary of the fork's intent and the relationship to
+the upstream project.

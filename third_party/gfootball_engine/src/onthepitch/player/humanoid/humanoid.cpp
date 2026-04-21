@@ -82,6 +82,17 @@ bool _PassFiddlingEnabled() {
   return true;
 }
 
+namespace {
+
+Vector3 GetRugbyCarryBallPosition(const SpatialState &spatialState) {
+  Vector3 forward = spatialState.bodyDirectionVec.GetNormalized(Vector3(1, 0, 0));
+  Vector3 side = forward.GetRotated2D(0.5f * pi);
+  return spatialState.position + forward * 0.14f + side * 0.09f +
+         Vector3(0, 0, 1.02f);
+}
+
+}  // namespace
+
 void Humanoid::Process() {
   DO_VALIDATION;
   auto currentMentalImage = match->GetMentalImage(mentalImageTime);
@@ -234,10 +245,14 @@ void Humanoid::Process() {
 
       const PlayerCommand &command = commandQueue[i];
 
-      if (command.desiredFunctionType == e_FunctionType_ShortPass ||
-          command.desiredFunctionType == e_FunctionType_LongPass ||
-          command.desiredFunctionType == e_FunctionType_HighPass ||
-          command.desiredFunctionType == e_FunctionType_Shot) {
+      if ((command.desiredFunctionType == e_FunctionType_ShortPass ||
+           command.desiredFunctionType == e_FunctionType_LongPass) &&
+          match->IsRugbyScenario()) {
+        DO_VALIDATION;
+      } else if (command.desiredFunctionType == e_FunctionType_ShortPass ||
+                 command.desiredFunctionType == e_FunctionType_LongPass ||
+                 command.desiredFunctionType == e_FunctionType_HighPass ||
+                 command.desiredFunctionType == e_FunctionType_Shot) {
         DO_VALIDATION;
         preferPassAndShot = true;
       }
@@ -499,6 +514,23 @@ void Humanoid::Process() {
 
         touchVec = touchVec * (1.0f - bumpyRideBias) + currentBallVec * bumpyRideBias;
 
+        if (match->IsRugbyScenario() &&
+            (currentAnim.functionType == e_FunctionType_ShortPass ||
+             currentAnim.functionType == e_FunctionType_LongPass ||
+             currentAnim.functionType == e_FunctionType_HighPass)) {
+          // In rugby the AI can't be allowed to throw the ball forward via
+          // the football pass animation. Redirect to the rugby pass logic,
+          // which only picks backward / level teammates; if that can't find
+          // a valid target, neutralise the impulse so the ball stays in
+          // the carrier's hands rather than flying forward.
+          match->GetBall()->SetPosition(GetRugbyCarryBallPosition(spatialState));
+          if (match->TryRugbyPass(team->GetID())) {
+            touchVec = Vector3(0);
+          } else {
+            match->GetBall()->SetMomentum(Vector3(0));
+            touchVec = Vector3(0);
+          }
+        }
         match->GetBall()->Touch(touchVec);
         float forwardness = 3.5f;
         if (currentAnim.functionType == e_FunctionType_HighPass) forwardness = -1.3f;
@@ -506,7 +538,15 @@ void Humanoid::Process() {
         radian yRot = touchVec.GetNormalized(0).coords[0] * (clamp(touchVec.GetLength(), 0.0, 15.0) * forwardness);
         match->GetBall()->SetRotation(xRot, yRot, zcurve, 0.9f * (1.0f - bumpyRideBias));
 
-        team->SetLastTouchPlayer(CastPlayer(), GetTouchTypeForBodyPart(currentAnim.anim->GetVariable("touch_bodypart")));
+        if (match->IsRugbyScenario() &&
+            (currentAnim.functionType == e_FunctionType_ShortPass ||
+             currentAnim.functionType == e_FunctionType_LongPass)) {
+          team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Intentional_Nonkicked);
+        } else {
+          team->SetLastTouchPlayer(
+              CastPlayer(),
+              GetTouchTypeForBodyPart(currentAnim.anim->GetVariable("touch_bodypart")));
+        }
       }
 
       else if (currentAnim.functionType == e_FunctionType_Shot) {
@@ -565,6 +605,7 @@ void Humanoid::Process() {
         bool canRetain = true; // can we grab hold of the ball?
         if (currentAnim.anim->GetVariable("outgoing_retain_state").compare("") == 0) canRetain = false; // not the right anim, hopeless!
         if (match->GetBallRetainer() != 0) canRetain = false; // somebody is already holding the ball :( (dafuq, this should not happen, right?)
+        if (match->IsRugbyRetainBlockedFor(team)) canRetain = false;
 
         float veloDifficulty = NormalizedClamp((match->GetBall()->GetMovement() - player->GetMovement()).GetLength(), 0.0f, 40.0f);
         float reactionDifficulty = 0.0f;
@@ -618,12 +659,23 @@ void Humanoid::Process() {
 
   if (match->GetBallRetainer() == player) {
     DO_VALIDATION;
-    if ((currentAnim.touchFrame <= currentAnim.frameNum &&
-         currentAnim.anim->GetVariable("outgoing_retain_state") != "") ||
-        (currentAnim.touchFrame > currentAnim.frameNum &&
-         currentAnim.anim->GetVariableCache().incoming_retain_state() != "") ||
-        (currentAnim.anim->GetVariable("incoming_retain_state") != "" &&
-         currentAnim.anim->GetVariable("outgoing_retain_state") != "")) {
+    // In rugby scenarios the ball is carried in the hands regardless of the
+    // current animation's retain-state metadata — rugby never plays with
+    // feet. Drop out of the football dribble/retain contract entirely.
+    if (match->IsRugbyScenario()) {
+      match->GetBall()->Touch(Vector3(0));
+      match->GetBall()->SetRotation(0, 0, 0, 1.0);
+      match->GetBall()->SetPosition(GetRugbyCarryBallPosition(spatialState));
+      match->GetBall()->SetMomentum(Vector3(0));
+      team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Intentional_Nonkicked);
+    } else if ((currentAnim.touchFrame <= currentAnim.frameNum &&
+                currentAnim.anim->GetVariable("outgoing_retain_state") != "") ||
+               (currentAnim.touchFrame > currentAnim.frameNum &&
+                currentAnim.anim->GetVariableCache().incoming_retain_state() !=
+                    "") ||
+               (currentAnim.anim->GetVariable("incoming_retain_state") != "" &&
+                currentAnim.anim->GetVariable("outgoing_retain_state") !=
+                    "")) {
       DO_VALIDATION;
       // find body part the ball is stuck to (superglue powers)
       auto outgoing = currentAnim.anim->GetVariable("outgoing_retain_state");
@@ -636,10 +688,12 @@ void Humanoid::Process() {
       assert(bodyPart);
       match->GetBall()->Touch(Vector3(0));
       match->GetBall()->SetRotation(0, 0, 0, 1.0);
-      match->GetBall()->SetPosition(bodyPart->GetDerivedPosition() + bodyPart->GetDerivedRotation() * Vector3(0, 0, -0.36f));
+      match->GetBall()->SetPosition(bodyPart->GetDerivedPosition() +
+                                    bodyPart->GetDerivedRotation() *
+                                        Vector3(0, 0, -0.36f));
       team->SetLastTouchPlayer(CastPlayer(), e_TouchType_Intentional_Nonkicked);
     } else {
-      // no longer retaining
+      // no longer retaining (football dribble lost)
       match->SetBallRetainer(0);
     }
   }
@@ -1222,9 +1276,16 @@ bool Humanoid::SelectAnim(const PlayerCommand &command,
   // CREATE A CRUDE SET OF POTENTIAL ANIMATIONS
 
   CrudeSelectionQuery query;
+  const bool rugbyHandPass =
+      match->IsRugbyScenario() &&
+      (command.desiredFunctionType == e_FunctionType_ShortPass ||
+       command.desiredFunctionType == e_FunctionType_LongPass);
 
   query.byFunctionType = true;
   query.functionType = command.desiredFunctionType;
+  if (rugbyHandPass) {
+    query.functionType = e_FunctionType_BallControl;
+  }
 
   query.byFoot = false;
   query.foot = spatialState.foot == e_Foot_Left ? e_Foot_Right : e_Foot_Left;

@@ -14,10 +14,10 @@
 
 """Google Research Football."""
 
+from gfootball import _gym_compat
 from gfootball.env import scenario_builder
 
-import gym
-from gym.envs.registration import register
+register = _gym_compat.register
 
 
 for env_name in scenario_builder.all_scenarios():

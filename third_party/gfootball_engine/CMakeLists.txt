@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.5)
 
 if(WIN32)
   # Check for required Environment variables
@@ -67,7 +67,9 @@ include_directories(${SDL2_GFX_DIRS})
 
 if(UNIX)
   if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.12")
-    find_package(Python COMPONENTS Development REQUIRED)
+    set(Python_FIND_STRATEGY LOCATION)
+    set(Python_FIND_FRAMEWORK LAST)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
   else()
     # Starting from CMake 3.12 FindPythonLibs was deprecated in favour of FindPython.
     # But Ubuntu 18.04 and other older distributions are shipped with CMake version < 3.12,
@@ -101,6 +103,7 @@ else()
 endif()
 
 # Include Boost Python.
+set(Boost_NO_BOOST_CMAKE ON)
 if(WIN32 OR APPLE)
   set(BOOST_PYTHON_VERSION python${Python_VERSION_MAJOR}${Python_VERSION_MINOR})
 else()
@@ -123,7 +126,7 @@ else()
 endif()
 message("Using Boost.Python: ${BOOST_PYTHON_VERSION}")
 
-FIND_PACKAGE(Boost REQUIRED COMPONENTS thread system filesystem ${BOOST_PYTHON_VERSION})
+FIND_PACKAGE(Boost REQUIRED COMPONENTS thread filesystem ${BOOST_PYTHON_VERSION})
 include_directories(${Boost_INCLUDE_DIRS})
 
 include_directories(${PROJECT_SOURCE_DIR}/src)
@@ -166,7 +169,7 @@ elseif(WIN32)
 endif()
 
 set(LIBRARIES gamelib menulib datalib blunted2
-   Boost::filesystem Boost::system Boost::thread Boost::${BOOST_PYTHON_VERSION}
+   Boost::filesystem Boost::thread Boost::${BOOST_PYTHON_VERSION}
    ${Py_TARGETS} ${SDL2_LIBS_ALL} ${EGL_LIBRARIES} ${OPENGL_LIBRARIES})
 
 add_library(${OUTPUT_LIB_NAME} SHARED ${CORE_SOURCES} ${CORE_HEADERS} ${AI_HEADERS} ${AI_SOURCES})

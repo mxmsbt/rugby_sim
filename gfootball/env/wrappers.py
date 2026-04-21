@@ -20,11 +20,21 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
-import cv2
+from gfootball import _gym_compat as gym
 from gfootball.env import football_action_set
 from gfootball.env import observation_preprocessing
-import gym
 import numpy as np
+
+
+cv2 = None
+
+
+def _get_cv2():
+  global cv2
+  if cv2 is None:
+    import cv2 as cv2_module
+    cv2 = cv2_module
+  return cv2
 
 
 class GetStateWrapper(gym.Wrapper):
@@ -77,7 +87,7 @@ class PeriodicDumpWriter(gym.Wrapper):
   def step(self, action):
     return self.env.step(action)
 
-  def reset(self):
+  def reset(self, *, seed=None, options=None):
     if (self._dump_frequency > 0 and
         (self._current_episode_number % self._dump_frequency == 0)):
       self.env._config.update(self._original_dump_config)
@@ -90,7 +100,7 @@ class PeriodicDumpWriter(gym.Wrapper):
       if self._render:
         self.env.disable_render()
     self._current_episode_number += 1
-    return self.env.reset()
+    return self.env.reset(seed=seed, options=options)
 
 
 class Simple115StateWrapper(gym.ObservationWrapper):
@@ -208,6 +218,7 @@ class PixelsStateWrapper(gym.ObservationWrapper):
 
   def observation(self, obs):
     o = []
+    cv2 = _get_cv2()
     for observation in obs:
       assert 'frame' in observation, ("Missing 'frame' in observations. Pixel "
                                       "representation requires rendering and is"
@@ -281,9 +292,9 @@ class CheckpointRewardWrapper(gym.RewardWrapper):
     self._num_checkpoints = 10
     self._checkpoint_reward = 0.1
 
-  def reset(self):
+  def reset(self, *, seed=None, options=None):
     self._collected_checkpoints = {}
-    return self.env.reset()
+    return self.env.reset(seed=seed, options=options)
 
   def get_state(self, to_pickle):
     to_pickle['CheckpointRewardWrapper'] = self._collected_checkpoints
@@ -349,8 +360,8 @@ class FrameStack(gym.Wrapper):
     self.observation_space = gym.spaces.Box(
         low=low, high=high, dtype=env.observation_space.dtype)
 
-  def reset(self):
-    observation = self.env.reset()
+  def reset(self, *, seed=None, options=None):
+    observation = self.env.reset(seed=seed, options=options)
     self.obs.extend([observation] * self.obs.maxlen)
     return self._get_observation()
 
@@ -401,8 +412,8 @@ class MultiAgentToSingleAgent(gym.Wrapper):
     else:
       self.action_space = gym.spaces.Discrete(env._num_actions)
 
-  def reset(self):
-    self._observation = self.env.reset()
+  def reset(self, *, seed=None, options=None):
+    self._observation = self.env.reset(seed=seed, options=options)
     return self._get_observation()
 
   def step(self, action):

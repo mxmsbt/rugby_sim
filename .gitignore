@@ -27,3 +27,27 @@ cmake_install.cmake
 # IDE
 .idea
 .vs*
+
+# macOS
+.DS_Store
+
+# virtualenvs (kept local)
+.venv/
+venv/
+rugby-sim-env/
+
+# Generated artifacts (videos, datasets, dumps) — not source
+artifacts/
+
+# Asset backups (originals from the football fork, preserved locally for
+# rollback but not needed in repository history)
+*.football_backup
+
+# Symlink created by setup.py develop mode
+/gfootball_engine
+
+# Fonts copied into the engine data dir at install time
+third_party/gfootball_engine/fonts/
+
+# Stray root-level __init__.py (not a package marker)
+/__init__.py

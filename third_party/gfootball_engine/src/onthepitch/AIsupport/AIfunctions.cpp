@@ -1167,7 +1167,41 @@ void AI_GetPass(Player *player, e_FunctionType passType,
   Vector3 resultingTargetRel = (autoTargetRel.GetNormalized(0) * adaptedAutoDirectionBias + manualTargetRel.GetNormalized(0) * (1.0f - adaptedAutoDirectionBias)).GetNormalized(manualTarget);
   resultingTargetRel *= float(autoTargetRel.GetLength() * adaptedAutoPowerBias + manualTargetRel.GetLength() * (1.0f - adaptedAutoPowerBias));
 
+  if (player->GetTeam()->GetMatch()->IsRugbyScenario() &&
+      (passType == e_FunctionType_ShortPass ||
+       passType == e_FunctionType_LongPass)) {
+    const float forward = resultingTargetRel.coords[0] *
+                          -player->GetTeam()->GetDynamicSide();
+    if (forward > 0.0f) {
+      resultingTargetRel.coords[0] +=
+          player->GetTeam()->GetDynamicSide() * (forward + 0.4f);
+    }
+
+    if (resultingTargetRel.GetLength() < 0.6f) {
+      resultingTargetRel =
+          Vector3(player->GetTeam()->GetDynamicSide(), 0.2f, 0.0f);
+    }
+
+    resultingTargetRel.coords[2] = 0.0f;
+  }
+
   AI_GetAutoPass(passType, resultingTargetRel, resultingDirection, resultingPower);
+
+  if (player->GetTeam()->GetMatch()->IsRugbyScenario() &&
+      (passType == e_FunctionType_ShortPass ||
+       passType == e_FunctionType_LongPass)) {
+    resultingDirection.coords[2] = 0.0f;
+    resultingDirection.Normalize(
+        Vector3(player->GetTeam()->GetDynamicSide(), 0.0f, 0.0f));
+    const float forward = resultingDirection.coords[0] *
+                          -player->GetTeam()->GetDynamicSide();
+    if (forward > 0.0f) {
+      resultingDirection.coords[0] +=
+          player->GetTeam()->GetDynamicSide() * (forward + 0.05f);
+      resultingDirection.Normalize(
+          Vector3(player->GetTeam()->GetDynamicSide(), 0.0f, 0.0f));
+    }
+  }
 }
 
 Vector3 AI_GetShotDirection(Player *player, const Vector3 &inputDirection,

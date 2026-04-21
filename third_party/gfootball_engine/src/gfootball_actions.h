@@ -47,7 +47,18 @@ enum Action {
   game_release_switch = 29,
   game_release_sprint = 30,
   game_release_dribble = 31,
-  game_builtin_ai = 32
+  game_builtin_ai = 32,
+  game_rugby_pass = 33,
+  game_spin_pass = 34,
+  game_box_kick = 35,
+  game_grubber_kick = 36,
+  game_tackle = 37,
+  game_contest = 38,
+  game_bind = 39,
+  game_offload = 40,
+  game_release_tackle = 41,
+  game_release_contest = 42,
+  game_release_bind = 43
 };
 
 #endif

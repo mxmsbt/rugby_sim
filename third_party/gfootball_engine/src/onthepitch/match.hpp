@@ -90,7 +90,7 @@ class Match {
     void SetGoalScored(bool onOff) { DO_VALIDATION; if (onOff == false) ballIsInGoal = false; goalScored = onOff; }
     bool IsGoalScored() const { return goalScored; }
     Team* GetLastGoalTeam() const { return lastGoalTeam; }
-    void SetLastTouchTeamID(int id, e_TouchType touchType = e_TouchType_Intentional_Kicked) { DO_VALIDATION; lastTouchTeamIDs[touchType] = id; lastTouchTeamID = id; referee->BallTouched(); }
+    void SetLastTouchTeamID(int id, e_TouchType touchType = e_TouchType_Intentional_Kicked) { DO_VALIDATION; lastTouchTeamIDs[touchType] = id; lastTouchTeamID = id; if (touchType == e_TouchType_Intentional_Kicked) { rugbyLastKickedByTeamID = id; rugbyLastKickTime_ms = actualTime_ms; } referee->BallTouched(); }
     int GetLastTouchTeamID(e_TouchType touchType) const { return lastTouchTeamIDs[touchType]; }
     int GetLastTouchTeamID() const { return lastTouchTeamID; }
     Team *GetLastTouchTeam() { DO_VALIDATION;
@@ -111,7 +111,7 @@ class Match {
     Team* GetBestPossessionTeam();
 
     Player *GetDesignatedPossessionPlayer() { DO_VALIDATION; return designatedPossessionPlayer; }
-    Player *GetBallRetainer() { DO_VALIDATION; return ballRetainer; }
+    Player *GetBallRetainer() const { DO_VALIDATION; return ballRetainer; }
     void SetBallRetainer(Player *retainer) { DO_VALIDATION;
       ballRetainer = retainer;
     }
@@ -122,6 +122,44 @@ class Match {
     unsigned long GetActualTime_ms() const { return actualTime_ms; }
     void BumpActualTime_ms(unsigned long time);
     void UpdateIngameCamera();
+    bool IsRugbyScenario() const;
+    e_GameMode GetGameMode() const;
+    bool CheckForRugbyScore(int &scoringTeamID) const;
+    bool CheckForRugbyDropGoal(int &scoringTeamID);
+    Player *FindRugbyKickAtGoalKicker(Team *team) const;
+    float ComputeRugbyKickAtGoalProb(Player *kicker,
+                                     const Vector3 &markPos) const;
+    bool ResolveRugbyKickAtGoal(Team *kickingTeam, const Vector3 &markPos,
+                                int awardPoints, const std::string &label);
+    bool TryRugbyPass(int teamID);
+    void RunRugbyAI();
+    bool IsRugbyBreakdownActive() const { DO_VALIDATION; return rugbyBreakdownActive; }
+    bool IsRugbyRetainBlockedFor(const Team *team) const {
+      DO_VALIDATION;
+      return IsRugbyScenario() && team != 0 && rugbyProtectedTeam != 0 &&
+             actualTime_ms < rugbyPossessionProtectionUntil_ms &&
+             team != rugbyProtectedTeam;
+    }
+    bool IsRugbyPlayerOffsideAtBreakdown(Player *player) const;
+    bool IsRugbyPlayerPenaltyEligibleAtBreakdown(Player *player) const;
+    Player *GetRugbyRecycleReceiver() const { DO_VALIDATION; return rugbyRecycleReceiver; }
+    unsigned long GetRugbyRecycleStartTime_ms() const {
+      DO_VALIDATION;
+      return rugbyRecycleStartTime_ms;
+    }
+    void SetRugbyLastLineoutOutcome(int winningTeamID) {
+      DO_VALIDATION;
+      rugbyLastLineoutWinningTeam = winningTeamID;
+      rugbyLastLineoutResolveTime_ms = actualTime_ms;
+    }
+    void SetRugbyLastScrumOutcome(int winningTeamID) {
+      DO_VALIDATION;
+      rugbyLastScrumWinningTeam = winningTeamID;
+      rugbyLastScrumResolveTime_ms = actualTime_ms;
+    }
+    float GetRugbyOffsideLine(int teamID) const;
+    void RegisterRugbyTackle(Player *carrier, Player *tackler,
+                             bool force = false);
 
 
     boost::intrusive_ptr<Camera> GetCamera() { DO_VALIDATION; return camera; }
@@ -157,6 +195,8 @@ class Match {
 
   private:
     bool CheckForGoal(signed int side, const Vector3& previousBallPos);
+    void UpdateRugbyPhase();
+    Player *GetRugbyRecycleTarget() const;
 
     void CalculateBestPossessionTeamID();
     void CheckHumanoidCollisions();
@@ -164,6 +204,7 @@ class Match {
     void CheckBallCollisions();
 
     void PrepareGoalNetting();
+    void EnforceRugbyBreakdownOffside();
     void UpdateGoalNetting(bool ballTouchesNet = false);
 
     MatchData *matchData;
@@ -222,6 +263,32 @@ class Match {
     float cameraFarCap = 0.0f;
 
     unsigned int lastBodyBallCollisionTime_ms = 0;
+
+    bool rugbyBreakdownActive = false;
+    bool rugbyPendingInitialBreakdown = false;
+    bool rugbyPendingInitialTry = false;
+    unsigned long rugbyBreakdownStartTime_ms = 0;
+    Vector3 rugbyBreakdownPos;
+    Team *rugbyBreakdownTeam = 0;
+    Player *rugbyTackledPlayer = 0;
+    Player *rugbyTackler = 0;
+    Player *rugbyRecycleReceiver = 0;
+    unsigned long rugbyRecycleStartTime_ms = 0;
+    Team *rugbyProtectedTeam = 0;
+    unsigned long rugbyPossessionProtectionUntil_ms = 0;
+    int rugbyLastLineoutWinningTeam = -1;
+    unsigned long rugbyLastLineoutResolveTime_ms = 0;
+    int rugbyLastScrumWinningTeam = -1;
+    unsigned long rugbyLastScrumResolveTime_ms = 0;
+    unsigned long rugbyLastDropGoalCheckTime_ms = 0;
+    int rugbyLastKickedByTeamID = -1;
+    unsigned long rugbyLastKickTime_ms = 0;
+    bool rugbyConversionAttempted = false;
+    unsigned long rugbyLastPassTime_ms = 0;
+    Player *rugbyLastPasser = 0;
+    unsigned long rugbyPasserPickupLockUntil_ms = 0;
+    Player *rugbyPendingPassReceiver = 0;
+    unsigned long rugbyPassInFlightUntil_ms = 0;
 
     std::deque<Vector3> camPos;
 

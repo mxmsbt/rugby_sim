@@ -805,6 +805,50 @@ void ElizaController::Reset() {
   lastDesiredVelocity = 0;
 }
 
+namespace {
+
+bool IsLegalRugbyHandPassTarget(Player *carrier, Player *target) {
+  if (carrier == nullptr || target == nullptr || carrier == target) return false;
+  Team *team = carrier->GetTeam();
+  const float forwardDelta =
+      (target->GetPosition().coords[0] - carrier->GetPosition().coords[0]) *
+      team->GetDynamicSide();
+  return forwardDelta <= 1.5f;
+}
+
+Vector3 GetRugbyCarryDirection(Player *carrier,
+                               const MentalImage *mentalImage) {
+  Team *team = carrier->GetTeam();
+  Vector3 forward(-team->GetDynamicSide(), 0, 0);
+  Vector3 carryDir = forward;
+
+  const std::vector<PlayerImagePosition> opponents =
+      mentalImage->GetTeamPlayerImages(abs(team->GetID() - 1));
+  float nearestDist = 1000.0f;
+  Vector3 nearestOffset(0);
+  for (const auto &opp : opponents) {
+    Vector3 offset = opp.position - carrier->GetPosition();
+    float dist = offset.GetLength();
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestOffset = offset;
+    }
+  }
+  if (nearestDist < 9.0f && nearestDist > 0.01f) {
+    Vector3 evade = nearestOffset.GetRotated2D(
+        signSide(nearestOffset.coords[1]) >= 0 ? -0.4f * pi : 0.4f * pi);
+    carryDir = (carryDir * 0.75f + evade.GetNormalized() * 0.65f).GetNormalized(
+        forward);
+  }
+
+  Vector3 infieldBias(0, clamp(-carrier->GetPosition().coords[1] * 0.18f, -0.7f,
+                               0.7f), 0);
+  carryDir = (carryDir + infieldBias).GetNormalized(forward);
+  return carryDir;
+}
+
+}  // namespace
+
 void ElizaController::ProcessState(EnvState *state) {
   DO_VALIDATION;
   ProcessPlayerController(state);
@@ -823,6 +867,7 @@ void ElizaController::GetOnTheBallCommands(
   oneTouchIsHard = movementDiff - CastPlayer()->GetStat(technical_shortpass) * movementDiff * 0.8f;
 
   auto opponentPlayerImages = _mentalImage->GetTeamPlayerImages(abs(team->GetID() - 1));
+  const bool rugbyScenario = match->IsRugbyScenario();
 
 
   // DECIDE WHAT TO DO
@@ -897,6 +942,10 @@ void ElizaController::GetOnTheBallCommands(
       mateRating.player = mates[i];
       mateRating.tacticalRating = mateTacticalRating;
 
+      if (rugbyScenario && !IsLegalRugbyHandPassTarget(CastPlayer(), mates[i])) {
+        continue;
+      }
+
       if (mateTacticalRating > tacticalRating + tacticalImprovementThreshold) {
         DO_VALIDATION;
 
@@ -905,7 +954,8 @@ void ElizaController::GetOnTheBallCommands(
         mateRating.tacticalDiffRating = tacticalDiffRating;
         float passingOddsShort = _GetPassingOdds(mates[i], e_FunctionType_ShortPass, opponentPlayerImages);
         float passingOddsLong  = _GetPassingOdds(mates[i], e_FunctionType_LongPass,  opponentPlayerImages);
-        float passingOddsHigh  = _GetPassingOdds(mates[i], e_FunctionType_HighPass,  opponentPlayerImages);
+        float passingOddsHigh  = rugbyScenario ? 0.0f :
+            _GetPassingOdds(mates[i], e_FunctionType_HighPass,  opponentPlayerImages);
         if (passingOddsShort >= passingOddsLong &&
             passingOddsShort >= passingOddsHigh) {
           DO_VALIDATION;
@@ -973,6 +1023,7 @@ void ElizaController::GetOnTheBallCommands(
   }
 
   // shoot?
+  if (!rugbyScenario) {
   float goalDist =
       NormalizedClamp((Vector3(pitchHalfW * -team->GetDynamicSide(), 0, 0) -
                        player->GetPosition())
@@ -1031,11 +1082,17 @@ void ElizaController::GetOnTheBallCommands(
       commandQueue.push_back(command);
     }
   }
+  }
 
   e_Velocity enumVelocity = e_Velocity_Idle;
-  AI_GetBestDribbleMovement(match, player, _mentalImage,
-                            rawInputDirection, rawInputVelocityFloat,
-                            team->GetTeamData()->GetTactics());
+  if (rugbyScenario) {
+    rawInputDirection = GetRugbyCarryDirection(CastPlayer(), _mentalImage);
+    rawInputVelocityFloat = sprintVelocity * 0.92f;
+  } else {
+    AI_GetBestDribbleMovement(match, player, _mentalImage,
+                              rawInputDirection, rawInputVelocityFloat,
+                              team->GetTeamData()->GetTactics());
+  }
 }
 
 void ElizaController::_AddPass(std::vector<PlayerCommand> &commandQueue,
@@ -1080,15 +1137,17 @@ void ElizaController::_AddPanicPass(std::vector<PlayerCommand> &commandQueue) {
   command.touchInfo.desiredPower = 0.7f;
   commandQueue.push_back(command);
 
-  command.desiredFunctionType = e_FunctionType_Shot;
-  command.touchInfo.inputPower = 0.6f;
-  command.touchInfo.desiredPower = 0.6f;
-  commandQueue.push_back(command);
+  if (!match->IsRugbyScenario()) {
+    command.desiredFunctionType = e_FunctionType_Shot;
+    command.touchInfo.inputPower = 0.6f;
+    command.touchInfo.desiredPower = 0.6f;
+    commandQueue.push_back(command);
 
-  command.desiredFunctionType = e_FunctionType_LongPass;
-  command.touchInfo.inputPower = 0.8f;
-  command.touchInfo.desiredPower = 0.8f;
-  commandQueue.push_back(command);
+    command.desiredFunctionType = e_FunctionType_LongPass;
+    command.touchInfo.inputPower = 0.8f;
+    command.touchInfo.desiredPower = 0.8f;
+    commandQueue.push_back(command);
+  }
 }
 
 float ElizaController::_GetPassingOdds(

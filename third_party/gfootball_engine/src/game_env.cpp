@@ -134,7 +134,7 @@ screenshoot GameEnv::get_frame() {
 
 bool GameEnv::sticky_action_state(int action, bool left_team, int player) {
   SetGame(this);
-  int controller_id = player + (left_team ? 0 : 11);
+  int controller_id = player + (left_team ? 0 : MAX_PLAYERS);
   auto controller =
       static_cast<AIControlledKeyboard*>(GetControllers()[controller_id]);
   switch (Action(action)) {
@@ -164,6 +164,12 @@ bool GameEnv::sticky_action_state(int action, bool left_team, int player) {
       return controller->GetButton(e_ButtonFunction_Sprint);
     case game_dribble:
       return controller->GetButton(e_ButtonFunction_Dribble);
+    case game_tackle:
+      return controller->GetButton(e_ButtonFunction_Pressure);
+    case game_contest:
+      return controller->GetButton(e_ButtonFunction_TeamPressure);
+    case game_bind:
+      return controller->GetButton(e_ButtonFunction_Dribble);
     default:
       Log(e_FatalError, "football", "main", "invalid sticky action");
   }
@@ -173,7 +179,7 @@ bool GameEnv::sticky_action_state(int action, bool left_team, int player) {
 void GameEnv::action(int action, bool left_team, int player) {
   SetGame(this);
   GetTracker()->setDisabled(true);
-  int controller_id = player + (left_team ? 0 : 11);
+  int controller_id = player + (left_team ? 0 : MAX_PLAYERS);
   auto controller = static_cast<AIControlledKeyboard*>(GetControllers()[controller_id]);
   controller->SetDisabled(false);
   switch (Action(action)) {
@@ -237,6 +243,48 @@ void GameEnv::action(int action, bool left_team, int player) {
     case game_dribble:
       controller->SetButton(e_ButtonFunction_Dribble, true);
       break;
+    case game_rugby_pass: {
+      Match *m = GetGameTask()->GetMatch();
+      if (m != nullptr && m->IsRugbyScenario()) {
+        m->TryRugbyPass(left_team ? 0 : 1);
+      } else {
+        controller->SetButton(e_ButtonFunction_ShortPass, true);
+      }
+      break;
+    }
+    case game_spin_pass: {
+      Match *m = GetGameTask()->GetMatch();
+      if (m != nullptr && m->IsRugbyScenario()) {
+        m->TryRugbyPass(left_team ? 0 : 1);
+      } else {
+        controller->SetButton(e_ButtonFunction_LongPass, true);
+      }
+      break;
+    }
+    case game_box_kick:
+      controller->SetButton(e_ButtonFunction_HighPass, true);
+      break;
+    case game_grubber_kick:
+      controller->SetButton(e_ButtonFunction_Shot, true);
+      break;
+    case game_tackle:
+      controller->SetButton(e_ButtonFunction_Pressure, true);
+      break;
+    case game_contest:
+      controller->SetButton(e_ButtonFunction_TeamPressure, true);
+      break;
+    case game_bind:
+      controller->SetButton(e_ButtonFunction_Dribble, true);
+      break;
+    case game_offload: {
+      Match *m = GetGameTask()->GetMatch();
+      if (m != nullptr && m->IsRugbyScenario()) {
+        m->TryRugbyPass(left_team ? 0 : 1);
+      } else {
+        controller->SetButton(e_ButtonFunction_ShortPass, true);
+      }
+      break;
+    }
     case game_release_direction:
       controller->SetDirection(Vector3(0, 0, 0));
       break;
@@ -271,6 +319,15 @@ void GameEnv::action(int action, bool left_team, int player) {
       controller->SetButton(e_ButtonFunction_Sprint, false);
       break;
     case game_release_dribble:
+      controller->SetButton(e_ButtonFunction_Dribble, false);
+      break;
+    case game_release_tackle:
+      controller->SetButton(e_ButtonFunction_Pressure, false);
+      break;
+    case game_release_contest:
+      controller->SetButton(e_ButtonFunction_TeamPressure, false);
+      break;
+    case game_release_bind:
       controller->SetButton(e_ButtonFunction_Dribble, false);
       break;
     case game_builtin_ai:

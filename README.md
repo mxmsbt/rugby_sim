@@ -1,18 +1,53 @@
-# Google Research Football
+# RugbySim
 
-This repository contains an RL environment based on open-source game Gameplay
-Football. <br> It was created by the Google Brain team for research purposes.
+RugbySim is a fork of `google-research/football` that is being rewritten into a
+15 vs 15 rugby union simulation engine and RL environment.
 
-Useful links:
+This repository currently preserves the upstream package/build layout while
+introducing RugbySim naming, rugby-oriented action interfaces, and a dedicated
+Python entrypoint under `rugby_sim`.
 
-* [Run in Colab](https://colab.research.google.com/github/google-research/football/blob/master/gfootball/colabs/gfootball_example_from_prebuild.ipynb) - start training in less that 2 minutes.
-* [Google Research Football Paper](https://arxiv.org/abs/1907.11180)
-* [GoogleAI blog post](https://ai.googleblog.com/2019/06/introducing-google-research-football.html)
-* [Google Research Football on Cloud](https://towardsdatascience.com/reproducing-google-research-football-rl-results-ac75cf17190e)
-* [GRF Kaggle competition](https://www.kaggle.com/c/google-football) - take part in the competition playing games against others, win prizes and become the GRF Champion!
+## Status
 
+This is an engine rewrite in progress, not a finished rugby simulator yet.
 
-We'd like to thank Bastiaan Konings Schuiling, who authored and open-sourced the original version of this game.
+What exists now:
+
+- upstream rendering and environment scaffolding
+- a new `rugby_sim.create_environment(...)` entrypoint
+- rugby action names exposed through the Python binding layer
+- an explicit engine rewrite plan in [docs/ENGINE_REWRITE_PLAN.md](docs/ENGINE_REWRITE_PLAN.md)
+
+What still needs substantial work:
+
+- tackle, ruck, maul, scrum, and lineout logic
+- rugby scoring and restart laws
+- rugby-specific player roles and team AI
+- rugby observations, scenarios, and rewards
+
+## Quick Start
+
+Create a local environment and install from source:
+
+```shell
+python3 -m venv rugby-sim-env
+source rugby-sim-env/bin/activate
+python3 -m pip install --upgrade pip setuptools wheel
+python3 -m pip install -e .
+```
+
+Use the rugby entrypoint:
+
+```python
+from rugby_sim import create_environment
+
+env = create_environment(render=False)
+```
+
+## Upstream Provenance
+
+This fork inherits code from `google-research/football` and the underlying
+Gameplay Football engine. See [UPSTREAM.md](UPSTREAM.md) for provenance notes.
 
 
 ## Quick Start

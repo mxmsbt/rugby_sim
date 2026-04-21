@@ -101,6 +101,15 @@ action_switch = CoreAction(e_BackendAction.switch, "switch")
 action_sprint = CoreAction(e_BackendAction.sprint, "sprint", sticky=True)
 action_dribble = CoreAction(
     e_BackendAction.dribble, "dribble", sticky=True)
+action_rugby_pass = CoreAction(e_BackendAction.rugby_pass, "rugby_pass")
+action_spin_pass = CoreAction(e_BackendAction.spin_pass, "spin_pass")
+action_box_kick = CoreAction(e_BackendAction.box_kick, "box_kick")
+action_grubber_kick = CoreAction(
+    e_BackendAction.grubber_kick, "grubber_kick")
+action_tackle = CoreAction(e_BackendAction.tackle, "tackle", sticky=True)
+action_contest = CoreAction(e_BackendAction.contest, "contest", sticky=True)
+action_bind = CoreAction(e_BackendAction.bind, "bind", sticky=True)
+action_offload = CoreAction(e_BackendAction.offload, "offload")
 action_release_direction = CoreAction(
     e_BackendAction.release_direction, "release_direction", directional=True)
 action_release_long_pass = CoreAction(e_BackendAction.release_long_pass,
@@ -124,6 +133,12 @@ action_release_sprint = CoreAction(e_BackendAction.release_sprint,
                                    "release_sprint")
 action_release_dribble = CoreAction(e_BackendAction.release_dribble,
                                     "release_dribble")
+action_release_tackle = CoreAction(e_BackendAction.release_tackle,
+                                   "release_tackle")
+action_release_contest = CoreAction(e_BackendAction.release_contest,
+                                    "release_contest")
+action_release_bind = CoreAction(e_BackendAction.release_bind,
+                                 "release_bind")
 
 # ***** Define some action sets *****
 action_set_v1 = [
@@ -147,8 +162,18 @@ full_action_set = action_set_v2 + [
     action_release_switch,
 ]
 
+rugby_action_set = [
+    action_idle, action_left, action_top_left, action_top,
+    action_top_right, action_right, action_bottom_right,
+    action_bottom, action_bottom_left, action_rugby_pass,
+    action_spin_pass, action_box_kick, action_grubber_kick,
+    action_tackle, action_contest, action_bind, action_offload,
+    action_sprint, action_release_direction, action_release_tackle,
+    action_release_contest, action_release_bind, action_release_sprint]
+
 action_set_dict = {
     "default": action_set_v1,
+    "rugby": rugby_action_set,
     "v2": action_set_v2,
     # "full" action set is needed by the play_game script.
     # Don't use it for training models.
@@ -177,7 +202,13 @@ reverse_action_mapping = {
     action_release_team_pressure: action_team_pressure,
     action_release_switch: action_switch,
     action_release_sprint: action_sprint,
-    action_release_dribble: action_dribble
+    action_release_dribble: action_dribble,
+    action_tackle: action_release_tackle,
+    action_contest: action_release_contest,
+    action_bind: action_release_bind,
+    action_release_tackle: action_tackle,
+    action_release_contest: action_contest,
+    action_release_bind: action_bind
 }
 
 # Returns action set specified by the config.

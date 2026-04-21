@@ -14,6 +14,15 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ENGINE_DIR="${ROOT_DIR}/third_party/gfootball_engine"
+PYTHON_EXECUTABLE="${PYTHON_EXECUTABLE:-$(python3 -c 'import sys; print(sys.executable)')}"
+PYTHON_ROOT_DIR="${PYTHON_ROOT_DIR:-$(python3 -c 'import sys; print(sys.prefix)')}"
+HOMEBREW_PREFIX="$(brew --prefix 2>/dev/null || true)"
+BOOST_ROOT="${BOOST_ROOT:-${HOMEBREW_PREFIX}}"
+BOOST_LIBRARYDIR="${BOOST_LIBRARYDIR:-${HOMEBREW_PREFIX}/lib}"
+
 LIB_EXTENSION="so"
 
 if [[ "$OSTYPE" == "darwin"* ]] ; then
@@ -25,6 +34,13 @@ fi
 PARALLELISM=$(python3 -c 'import psutil; import multiprocessing as mp; print(int(max(1,min((psutil.virtual_memory().available/1000000000-1)/0.5, mp.cpu_count()))))')
 
 # Delete pre-existing version of CMakeCache.txt to make 'python3 -m pip install' work.
-rm -f third_party/gfootball_engine/CMakeCache.txt
-pushd third_party/gfootball_engine && cmake . && make -j $PARALLELISM && popd
-pushd third_party/gfootball_engine && ln -sf libgame.$LIB_EXTENSION _gameplayfootball.so && popd
+rm -f "${ENGINE_DIR}/CMakeCache.txt"
+pushd "${ENGINE_DIR}"
+cmake . \
+  -DPython_EXECUTABLE="${PYTHON_EXECUTABLE}" \
+  -DPython_ROOT_DIR="${PYTHON_ROOT_DIR}" \
+  ${BOOST_ROOT:+-DBOOST_ROOT="${BOOST_ROOT}"} \
+  ${BOOST_LIBRARYDIR:+-DBOOST_LIBRARYDIR="${BOOST_LIBRARYDIR}"}
+make -j $PARALLELISM
+ln -sf "libgame.${LIB_EXTENSION}" _gameplayfootball.so
+popd

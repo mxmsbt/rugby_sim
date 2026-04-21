@@ -35,6 +35,170 @@ constexpr int seamlessTexH = 1200;
 constexpr int overlayTexW = 4096;
 constexpr int overlayTexH = 2048;
 
+namespace {
+
+float PitchCoordToOverlayX(float xCoord) {
+  return ((xCoord / pitchFullHalfW) * 0.5f + 0.5f) * overlayTexW;
+}
+
+float PitchCoordToOverlayY(float yCoord) {
+  return ((yCoord / pitchFullHalfH) * 0.5f + 0.5f) * overlayTexH;
+}
+
+void BlendOverlayPixel(Vector3 *overlayTex, float *overlayAlphaTex, int x, int y,
+                       const Vector3 &color, float alpha) {
+  if (x < 0 || x >= overlayTexW || y < 0 || y >= overlayTexH) return;
+  const int index = y * overlayTexW + x;
+  const float existingAlpha = overlayAlphaTex[index];
+  const float compositeAlpha = alpha + existingAlpha * (1.0f - alpha);
+  if (compositeAlpha <= 0.0001f) return;
+  overlayTex[index] =
+      (color * alpha + overlayTex[index] * existingAlpha * (1.0f - alpha)) /
+      compositeAlpha;
+  overlayAlphaTex[index] = compositeAlpha;
+}
+
+void DrawOverlayRect(Vector3 *overlayTex, float *overlayAlphaTex, float x1,
+                     float y1, float x2, float y2, const Vector3 &color,
+                     float alpha = 1.0f) {
+  const int minX = std::max(0, static_cast<int>(std::floor(std::min(x1, x2))));
+  const int maxX = std::min(overlayTexW - 1,
+                            static_cast<int>(std::ceil(std::max(x1, x2))));
+  const int minY = std::max(0, static_cast<int>(std::floor(std::min(y1, y2))));
+  const int maxY = std::min(overlayTexH - 1,
+                            static_cast<int>(std::ceil(std::max(y1, y2))));
+  for (int x = minX; x <= maxX; ++x) {
+    for (int y = minY; y <= maxY; ++y) {
+      BlendOverlayPixel(overlayTex, overlayAlphaTex, x, y, color, alpha);
+    }
+  }
+}
+
+void DrawPitchLine(Vector3 *overlayTex, float *overlayAlphaTex, float x1,
+                   float y1, float x2, float y2, float thickness,
+                   const Vector3 &color, bool dashed = false,
+                   float dashLength = 2.0f, float gapLength = 1.4f) {
+  if (fabs(x1 - x2) >= fabs(y1 - y2)) {
+    const float minX = std::min(x1, x2);
+    const float maxX = std::max(x1, x2);
+    const float yMin = PitchCoordToOverlayY(y1 + thickness * 0.5f);
+    const float yMax = PitchCoordToOverlayY(y1 - thickness * 0.5f);
+    if (!dashed) {
+      DrawOverlayRect(overlayTex, overlayAlphaTex, PitchCoordToOverlayX(minX),
+                      yMin, PitchCoordToOverlayX(maxX), yMax, color);
+      return;
+    }
+    float segmentStart = minX;
+    while (segmentStart < maxX) {
+      const float segmentEnd = std::min(segmentStart + dashLength, maxX);
+      DrawOverlayRect(overlayTex, overlayAlphaTex,
+                      PitchCoordToOverlayX(segmentStart), yMin,
+                      PitchCoordToOverlayX(segmentEnd), yMax, color);
+      segmentStart += dashLength + gapLength;
+    }
+  } else {
+    const float minY = std::min(y1, y2);
+    const float maxY = std::max(y1, y2);
+    const float xMin = PitchCoordToOverlayX(x1 - thickness * 0.5f);
+    const float xMax = PitchCoordToOverlayX(x1 + thickness * 0.5f);
+    if (!dashed) {
+      DrawOverlayRect(overlayTex, overlayAlphaTex, xMin,
+                      PitchCoordToOverlayY(minY), xMax,
+                      PitchCoordToOverlayY(maxY), color);
+      return;
+    }
+    float segmentStart = minY;
+    while (segmentStart < maxY) {
+      const float segmentEnd = std::min(segmentStart + dashLength, maxY);
+      DrawOverlayRect(overlayTex, overlayAlphaTex, xMin,
+                      PitchCoordToOverlayY(segmentStart), xMax,
+                      PitchCoordToOverlayY(segmentEnd), color);
+      segmentStart += dashLength + gapLength;
+    }
+  }
+}
+
+void GenerateRugbyOverlay(Vector3 *overlayTex, float *overlayAlphaTex) {
+  for (int i = 0; i < overlayTexW * overlayTexH; ++i) {
+    overlayTex[i] = Vector3(0, 0, 0);
+    overlayAlphaTex[i] = 0.0f;
+  }
+  const Vector3 lineColor(240, 240, 236);
+  const float lineThickness = 0.36f;
+
+  // In-goal (try zone) shading — translucent gold between the try line and
+  // the dead-ball line on each end. Sits under the markings so lines show on
+  // top. Uses the full pitch depth (pitchFullHalfH) so the shade reaches the
+  // corner flags.
+  const Vector3 tryZoneColor(212, 175, 55);
+  const float tryZoneAlpha = 0.28f;
+  DrawOverlayRect(overlayTex, overlayAlphaTex,
+                  PitchCoordToOverlayX(-pitchFullHalfW),
+                  PitchCoordToOverlayY(-pitchHalfH),
+                  PitchCoordToOverlayX(-pitchHalfW),
+                  PitchCoordToOverlayY(pitchHalfH), tryZoneColor, tryZoneAlpha);
+  DrawOverlayRect(overlayTex, overlayAlphaTex,
+                  PitchCoordToOverlayX(pitchHalfW),
+                  PitchCoordToOverlayY(-pitchHalfH),
+                  PitchCoordToOverlayX(pitchFullHalfW),
+                  PitchCoordToOverlayY(pitchHalfH), tryZoneColor, tryZoneAlpha);
+
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -pitchHalfH,
+                pitchHalfW, -pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, pitchHalfH,
+                pitchHalfW, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -pitchHalfH,
+                -pitchHalfW, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW, -pitchHalfH,
+                pitchHalfW, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, 0.0f, -pitchHalfH, 0.0f,
+                pitchHalfH, lineThickness, lineColor);
+
+  const float tenMeter = std::min(10.0f, pitchHalfW - 4.0f);
+  const float twentyTwo = std::min(22.0f, pitchHalfW - 4.0f);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -tenMeter, -pitchHalfH,
+                -tenMeter, pitchHalfH, lineThickness * 0.9f, lineColor, true);
+  DrawPitchLine(overlayTex, overlayAlphaTex, tenMeter, -pitchHalfH, tenMeter,
+                pitchHalfH, lineThickness * 0.9f, lineColor, true);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -twentyTwo, -pitchHalfH,
+                -twentyTwo, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, twentyTwo, -pitchHalfH,
+                twentyTwo, pitchHalfH, lineThickness, lineColor);
+
+  const float fiveMeter = std::min(5.0f, pitchHalfW - 2.0f);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW + fiveMeter,
+                -pitchHalfH, -pitchHalfW + fiveMeter, pitchHalfH,
+                lineThickness * 0.8f, lineColor, true, 1.5f, 1.0f);
+  DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW - fiveMeter,
+                -pitchHalfH, pitchHalfW - fiveMeter, pitchHalfH,
+                lineThickness * 0.8f, lineColor, true, 1.5f, 1.0f);
+
+  const float fifteenInset = std::min(15.0f, pitchHalfH - 2.0f);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -fifteenInset,
+                pitchHalfW, -fifteenInset, lineThickness * 0.7f, lineColor,
+                true, 1.6f, 1.1f);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, fifteenInset,
+                pitchHalfW, fifteenInset, lineThickness * 0.7f, lineColor,
+                true, 1.6f, 1.1f);
+
+  // Dead-ball lines at the back of each in-goal area.
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchFullHalfW, -pitchHalfH,
+                -pitchFullHalfW, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, pitchFullHalfW, -pitchHalfH,
+                pitchFullHalfW, pitchHalfH, lineThickness, lineColor);
+  // In-goal sidelines connecting try line to dead-ball line.
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchFullHalfW, -pitchHalfH,
+                -pitchHalfW, -pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchFullHalfW, pitchHalfH,
+                -pitchHalfW, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW, -pitchHalfH,
+                pitchFullHalfW, -pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW, pitchHalfH,
+                pitchFullHalfW, pitchHalfH, lineThickness, lineColor);
+}
+
+}  // namespace
+
 template <typename T>
 T BilinearSample(T *tex, float x, float y, int w, int h) {
   DO_VALIDATION;
@@ -316,11 +480,16 @@ void CreateChunk(int i, int resX, int resY, int resSpecularX, int resSpecularY,
 void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY,
                    int resNormalX, int resNormalY) {
   DO_VALIDATION;
-  if (GetContext().already_loaded) {
+  static bool lastWasRugby = false;
+  const bool rugbyFieldRequested =
+      GetScenarioConfig().left_team.size() == 15 &&
+      GetScenarioConfig().right_team.size() == 15;
+  if (GetContext().already_loaded && lastWasRugby == rugbyFieldRequested) {
     DO_VALIDATION;
     return;
   }
   GetContext().already_loaded = true;
+  lastWasRugby = rugbyFieldRequested;
 
   SDL_Surface *seamless = IMG_LoadBmp("media/textures/pitch/seamlessgrass08.png");
   SDL_PixelFormat seamlessFormat = *seamless->format;
@@ -339,25 +508,29 @@ void GeneratePitch(int resX, int resY, int resSpecularX, int resSpecularY,
   }
   SDL_FreeSurface(seamless);
 
-  SDL_Surface *overlay = IMG_LoadBmp("media/textures/pitch/overlay.png");
-  SDL_PixelFormat overlayFormat = *overlay->format;
-  assert(overlayTexW == overlay->w);
-  assert(overlayTexH == overlay->h);
   Vector3 *overlayTex = new Vector3[overlayTexW * overlayTexH];
   float* overlay_alphaTex = new float[overlayTexW * overlayTexH];
-  for (int x = 0; x < overlayTexW; x++) {
-    DO_VALIDATION;
-    for (int y = 0; y < overlayTexH; y++) {
+  const bool rugbyField = rugbyFieldRequested;
+  if (rugbyField) {
+    GenerateRugbyOverlay(overlayTex, overlay_alphaTex);
+  } else {
+    SDL_Surface *overlay = IMG_LoadBmp("media/textures/pitch/overlay.png");
+    SDL_PixelFormat overlayFormat = *overlay->format;
+    assert(overlayTexW == overlay->w);
+    assert(overlayTexH == overlay->h);
+    for (int x = 0; x < overlayTexW; x++) {
       DO_VALIDATION;
-      Uint32 pixel = sdl_getpixel(overlay, x, y);
-      Uint8 r, g, b, a;
-      SDL_GetRGBA(pixel, &overlayFormat, &r, &g, &b, &a);
-      overlayTex[y * overlay->w + x] = Vector3(r, g, b);
-      overlay_alphaTex[y * overlay->w + x] = a / 256.0f;
-      //printf("alpha: %f\n", overlay_alphaTex[y * overlay->w + x]);
+      for (int y = 0; y < overlayTexH; y++) {
+        DO_VALIDATION;
+        Uint32 pixel = sdl_getpixel(overlay, x, y);
+        Uint8 r, g, b, a;
+        SDL_GetRGBA(pixel, &overlayFormat, &r, &g, &b, &a);
+        overlayTex[y * overlay->w + x] = Vector3(r, g, b);
+        overlay_alphaTex[y * overlay->w + x] = a / 256.0f;
+      }
     }
+    SDL_FreeSurface(overlay);
   }
-  SDL_FreeSurface(overlay);
 
   float scale = 0.06f;
 

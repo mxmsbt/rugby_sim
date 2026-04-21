@@ -17,7 +17,7 @@
 import pickle
 import time
 from absl import logging
-import cv2
+from gfootball import _gym_compat as gym
 from gfootball.env import football_action_set
 from gfootball.eval_server import config
 from gfootball.eval_server import utils
@@ -26,8 +26,18 @@ from gfootball.eval_server.proto import game_server_pb2_grpc
 from gfootball.eval_server.proto import master_pb2
 from gfootball.eval_server.proto import master_pb2_grpc
 import grpc
-import gym
 import numpy as np
+
+
+cv2 = None
+
+
+def _get_cv2():
+  global cv2
+  if cv2 is None:
+    import cv2 as cv2_module
+    cv2 = cv2_module
+  return cv2
 
 
 CONNECTION_TRIALS = 20
@@ -99,7 +109,7 @@ class RemoteFootballEnv(gym.Env):
         model_name=self._model_name, action_list=action)
     return self._get_env_result(request, 'Step')
 
-  def reset(self):
+  def reset(self, *, seed=None, options=None):
     if self._channel is not None:
       # Client surrenders in the current game and starts next one.
 
@@ -179,6 +189,7 @@ class RemoteFootballEnv(gym.Env):
   def _process_env_result(self, env_result):
     ob, rew, done, info = env_result
     if self._include_rendering and 'frame' in info:
+      cv2 = _get_cv2()
       cv2.imshow('GRF League', info['frame'])
       cv2.waitKey(1)
     if done:

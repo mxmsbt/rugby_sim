@@ -819,6 +819,59 @@ void TeamAIController::PrepareSetPiece(e_GameMode setPiece, Team *other_team,
                   break;
 
                 case e_GameMode_GoalKick:
+                  if (match->IsRugbyScenario()) {
+                    Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+                    const float teamSign = isTakerTeam ? -1.0f : 1.0f;
+                    // Front rows meet head-to-head at a ~0.5 m tunnel — pull
+                    // each pack in close enough that the bind is visible
+                    // rather than two lines of players standing a metre
+                    // apart.
+                    const float frontRowY = 0.28f * teamSign;
+                    // Shoulder-to-shoulder front row (≈0.45 m apart).
+                    const float frontRowCols[3] = {-0.45f, 0.0f, 0.45f};
+                    // Locks bound behind between the props, 0.65 m behind
+                    // the front row.
+                    const float secondRowCols[2] = {-0.22f, 0.22f};
+                    // Flankers + number 8 close behind the locks.
+                    const float backRowCols[3] = {-0.70f, 0.0f, 0.70f};
+                    for (unsigned int i = 0; i < players.size(); i++) {
+                      DO_VALIDATION;
+                      Vector3 basePos;
+                      Vector3 facing = ballPos;
+                      if (i < 3) {
+                        basePos = Vector3(ballPos.coords[0] + frontRowCols[i],
+                                          ballPos.coords[1] + frontRowY, 0);
+                      } else if (i < 5) {
+                        basePos = Vector3(
+                            ballPos.coords[0] + secondRowCols[i - 3],
+                            ballPos.coords[1] + frontRowY + 0.65f * teamSign,
+                            0);
+                      } else if (i < 8) {
+                        basePos = Vector3(
+                            ballPos.coords[0] + backRowCols[i - 5],
+                            ballPos.coords[1] + frontRowY + 1.25f * teamSign,
+                            0);
+                      } else if (i == 8) {
+                        // Scrum-half sits beside the tunnel on the feeding
+                        // side for the feed team and on the opposite side
+                        // for the defenders (covering the break).
+                        const float halfX = isTakerTeam ? 0.55f : -0.55f;
+                        basePos = Vector3(
+                            ballPos.coords[0] + halfX,
+                            ballPos.coords[1] + 0.20f * teamSign, 0);
+                      } else {
+                        // Backline forms an echelon behind the scrum.
+                        const int supportIndex = i - 9;
+                        basePos = Vector3(
+                            ballPos.coords[0] + 1.2f + supportIndex * 1.4f,
+                            ballPos.coords[1] + (3.2f + supportIndex * 0.65f) *
+                                                    teamSign,
+                            0);
+                      }
+                      players[i]->ResetPosition(basePos, facing);
+                    }
+                    break;
+                  }
                   for (unsigned int i = 0; i < players.size(); i++) {
                     DO_VALIDATION;
                     float backXBound, frontXBound, lowYBound, highYBound;
@@ -841,6 +894,59 @@ void TeamAIController::PrepareSetPiece(e_GameMode setPiece, Team *other_team,
                   break;
 
                 case e_GameMode_Corner:
+                  if (match->IsRugbyScenario()) {
+                    Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+                    const float teamSign = isTakerTeam ? -1.0f : 1.0f;
+                    // Front rows meet head-to-head at a ~0.5 m tunnel — pull
+                    // each pack in close enough that the bind is visible
+                    // rather than two lines of players standing a metre
+                    // apart.
+                    const float frontRowY = 0.28f * teamSign;
+                    // Shoulder-to-shoulder front row (≈0.45 m apart).
+                    const float frontRowCols[3] = {-0.45f, 0.0f, 0.45f};
+                    // Locks bound behind between the props, 0.65 m behind
+                    // the front row.
+                    const float secondRowCols[2] = {-0.22f, 0.22f};
+                    // Flankers + number 8 close behind the locks.
+                    const float backRowCols[3] = {-0.70f, 0.0f, 0.70f};
+                    for (unsigned int i = 0; i < players.size(); i++) {
+                      DO_VALIDATION;
+                      Vector3 basePos;
+                      Vector3 facing = ballPos;
+                      if (i < 3) {
+                        basePos = Vector3(ballPos.coords[0] + frontRowCols[i],
+                                          ballPos.coords[1] + frontRowY, 0);
+                      } else if (i < 5) {
+                        basePos = Vector3(
+                            ballPos.coords[0] + secondRowCols[i - 3],
+                            ballPos.coords[1] + frontRowY + 0.65f * teamSign,
+                            0);
+                      } else if (i < 8) {
+                        basePos = Vector3(
+                            ballPos.coords[0] + backRowCols[i - 5],
+                            ballPos.coords[1] + frontRowY + 1.25f * teamSign,
+                            0);
+                      } else if (i == 8) {
+                        // Scrum-half sits beside the tunnel on the feeding
+                        // side for the feed team and on the opposite side
+                        // for the defenders (covering the break).
+                        const float halfX = isTakerTeam ? 0.55f : -0.55f;
+                        basePos = Vector3(
+                            ballPos.coords[0] + halfX,
+                            ballPos.coords[1] + 0.20f * teamSign, 0);
+                      } else {
+                        // Backline forms an echelon behind the scrum.
+                        const int supportIndex = i - 9;
+                        basePos = Vector3(
+                            ballPos.coords[0] + 1.2f + supportIndex * 1.4f,
+                            ballPos.coords[1] + (3.2f + supportIndex * 0.65f) *
+                                                    teamSign,
+                            0);
+                      }
+                      players[i]->ResetPosition(basePos, facing);
+                    }
+                    break;
+                  }
                   for (unsigned int i = 0; i < players.size(); i++) {
                     DO_VALIDATION;
                     float backXBound, frontXBound, lowYBound, highYBound,
@@ -882,6 +988,43 @@ void TeamAIController::PrepareSetPiece(e_GameMode setPiece, Team *other_team,
                   break;
 
                 case e_GameMode_ThrowIn:
+                  if (match->IsRugbyScenario()) {
+                    Vector3 ballPos = match->GetBall()->Predict(0).Get2D();
+                    const float touchSide = signSide(ballPos.coords[1]);
+                    const float frontY = touchSide * (pitchHalfH - 3.0f);
+                    const float backY = touchSide * (pitchHalfH - 6.0f);
+                    const float startX =
+                        clamp(ballPos.coords[0] - 6.0f, -pitchHalfW + 4.0f,
+                              pitchHalfW - 10.0f);
+                    const float spacingX = 1.8f;
+                    const float laneJitter = isTakerTeam ? 0.2f : -0.2f;
+
+                    for (unsigned int i = 0; i < players.size(); i++) {
+                      DO_VALIDATION;
+                      Vector3 basePos;
+                      if (i < 7) {
+                        basePos = Vector3(startX + i * spacingX,
+                                          isTakerTeam ? frontY : backY, 0);
+                        basePos.coords[0] += laneJitter;
+                      } else {
+                        float supportIndex = i - 7;
+                        basePos = players[i]->GetFormationEntry().position *
+                                  Vector3(-team->GetDynamicSide() *
+                                              pitchHalfW * 0.55f,
+                                          -team->GetDynamicSide() *
+                                              pitchHalfH * 0.55f,
+                                          0);
+                        basePos.coords[0] += team->GetDynamicSide() * 6.0f;
+                        basePos.coords[1] =
+                            clamp(touchSide * (pitchHalfH - 12.0f) -
+                                      supportIndex * touchSide * 1.4f,
+                                  -pitchHalfH + 4.0f, pitchHalfH - 4.0f);
+                      }
+                      players[i]->ResetPosition(
+                          basePos, match->GetBall()->Predict(0).Get2D());
+                    }
+                    break;
+                  }
                   for (unsigned int i = 0; i < players.size(); i++) {
                     DO_VALIDATION;
                     float backXBound, frontXBound, lowYBound, highYBound,
@@ -1141,12 +1284,20 @@ void TeamAIController::PrepareSetPiece(e_GameMode setPiece, Team *other_team,
                   // Do nothing
                 } else if (setPiece == e_GameMode_ThrowIn) {
                   DO_VALIDATION;
-                  players[0]->ResetPosition(
-                      ball_pos +
-                          match->GetBall()->Predict(0).Get2D().GetNormalized(
-                              Vector3(0, -team->GetDynamicSide(), 0)) *
-                              0.3f,
-                      ball_pos);
+                  if (match->IsRugbyScenario()) {
+                    const float touchSide = signSide(ball_pos.coords[1]);
+                    players[0]->ResetPosition(
+                        Vector3(ball_pos.coords[0],
+                                touchSide * (pitchHalfH + 0.8f), 0),
+                        ball_pos);
+                  } else {
+                    players[0]->ResetPosition(
+                        ball_pos +
+                            match->GetBall()->Predict(0).Get2D().GetNormalized(
+                                Vector3(0, -team->GetDynamicSide(), 0)) *
+                                0.3f,
+                        ball_pos);
+                  }
                 } else if (setPiece == e_GameMode_FreeKick) {
                   DO_VALIDATION;
                   taker->ResetPosition(

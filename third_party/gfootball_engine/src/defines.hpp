@@ -55,7 +55,7 @@ constexpr float EPSILON = 0.000001;
 #define X_FIELD_SCALE 54.4
 #define Y_FIELD_SCALE -83.6
 #define Z_FIELD_SCALE 1
-#define MAX_PLAYERS 11
+#define MAX_PLAYERS 15
 
 typedef std::string screenshoot;
 
@@ -233,6 +233,12 @@ enum e_GameMode {
   e_GameMode_Corner,
   e_GameMode_ThrowIn,
   e_GameMode_Penalty,
+  e_GameMode_RugbyKickoff,
+  e_GameMode_Ruck,
+  e_GameMode_Scrum,
+  e_GameMode_Lineout,
+  e_GameMode_Conversion,
+  e_GameMode_DropGoalAttempt,
 };
 
 enum e_PlayerColor {
@@ -302,6 +308,30 @@ struct SharedInfo {
   bool is_in_play = false;
   int ball_owned_team = 0;
   int ball_owned_player = 0;
+  bool rugby_breakdown_active = false;
+  bool rugby_pending_initial_breakdown = false;
+  bool rugby_force_initial_breakdown_config = false;
+  int rugby_breakdown_team = -1;
+  Position rugby_breakdown_position;
+  int rugby_recycle_receiver_team = -1;
+  Position rugby_recycle_receiver_position;
+  int rugby_possession_protected_team = -1;
+  float rugby_offside_line = 0.0f;
+  int rugby_ball_retainer_team = -1;
+  int rugby_designated_possession_team = -1;
+  bool rugby_is_in_set_piece = false;
+  bool rugby_lineout_active = false;
+  int rugby_lineout_team = -1;
+  int rugby_lineout_winning_team = -1;
+  bool rugby_scrum_active = false;
+  int rugby_scrum_team = -1;
+  int rugby_scrum_winning_team = -1;
+  float rugby_left_team_offside_line = 0.0f;
+  float rugby_right_team_offside_line = 0.0f;
+  int rugby_left_team_side = 0;
+  int rugby_right_team_side = 0;
+  int rugby_actual_time_ms = 0;
+  int rugby_breakdown_start_time_ms = 0;
   int step = 0;
 };
 

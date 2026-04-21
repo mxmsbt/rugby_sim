@@ -121,6 +121,49 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .def_readonly("is_in_play", &SharedInfo::is_in_play)
       .def_readonly("ball_owned_team", &SharedInfo::ball_owned_team)
       .def_readonly("ball_owned_player", &SharedInfo::ball_owned_player)
+      .def_readonly("rugby_breakdown_active",
+                    &SharedInfo::rugby_breakdown_active)
+      .def_readonly("rugby_pending_initial_breakdown",
+                    &SharedInfo::rugby_pending_initial_breakdown)
+      .def_readonly("rugby_force_initial_breakdown_config",
+                    &SharedInfo::rugby_force_initial_breakdown_config)
+      .def_readonly("rugby_breakdown_team", &SharedInfo::rugby_breakdown_team)
+      .def_readonly("rugby_breakdown_position",
+                    &SharedInfo::rugby_breakdown_position)
+      .def_readonly("rugby_recycle_receiver_team",
+                    &SharedInfo::rugby_recycle_receiver_team)
+      .def_readonly("rugby_recycle_receiver_position",
+                    &SharedInfo::rugby_recycle_receiver_position)
+      .def_readonly("rugby_possession_protected_team",
+                    &SharedInfo::rugby_possession_protected_team)
+      .def_readonly("rugby_offside_line", &SharedInfo::rugby_offside_line)
+      .def_readonly("rugby_ball_retainer_team",
+                    &SharedInfo::rugby_ball_retainer_team)
+      .def_readonly("rugby_designated_possession_team",
+                    &SharedInfo::rugby_designated_possession_team)
+      .def_readonly("rugby_is_in_set_piece",
+                    &SharedInfo::rugby_is_in_set_piece)
+      .def_readonly("rugby_lineout_active",
+                    &SharedInfo::rugby_lineout_active)
+      .def_readonly("rugby_lineout_team", &SharedInfo::rugby_lineout_team)
+      .def_readonly("rugby_lineout_winning_team",
+                    &SharedInfo::rugby_lineout_winning_team)
+      .def_readonly("rugby_scrum_active",
+                    &SharedInfo::rugby_scrum_active)
+      .def_readonly("rugby_scrum_team", &SharedInfo::rugby_scrum_team)
+      .def_readonly("rugby_scrum_winning_team",
+                    &SharedInfo::rugby_scrum_winning_team)
+      .def_readonly("rugby_left_team_offside_line",
+                    &SharedInfo::rugby_left_team_offside_line)
+      .def_readonly("rugby_right_team_offside_line",
+                    &SharedInfo::rugby_right_team_offside_line)
+      .def_readonly("rugby_left_team_side",
+                    &SharedInfo::rugby_left_team_side)
+      .def_readonly("rugby_right_team_side",
+                    &SharedInfo::rugby_right_team_side)
+      .def_readonly("rugby_actual_time_ms", &SharedInfo::rugby_actual_time_ms)
+      .def_readonly("rugby_breakdown_start_time_ms",
+                    &SharedInfo::rugby_breakdown_start_time_ms)
       .add_property("left_controllers", &SharedInfo::left_controllers)
       .add_property("right_controllers", &SharedInfo::right_controllers)
       .def_readonly("game_mode", &SharedInfo::game_mode)
@@ -174,6 +217,10 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .def_readwrite("right_team", &ScenarioConfig::right_team)
       .def_readwrite("left_agents", &ScenarioConfig::left_agents)
       .def_readwrite("right_agents", &ScenarioConfig::right_agents)
+      .def_readwrite("initial_ball_owner_team",
+                     &ScenarioConfig::initial_ball_owner_team)
+      .def_readwrite("initial_ball_owner_player",
+                     &ScenarioConfig::initial_ball_owner_player)
       .def_readwrite("use_magnet", &ScenarioConfig::use_magnet)
       .def_readwrite("game_engine_random_seed",
                      &ScenarioConfig::game_engine_random_seed)
@@ -196,6 +243,14 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .def_readwrite("second_half", &ScenarioConfig::second_half)
       .def_readwrite("control_all_players",
                      &ScenarioConfig::control_all_players)
+      .def_readwrite("rugby_force_initial_breakdown",
+                     &ScenarioConfig::rugby_force_initial_breakdown)
+      .def_readwrite("rugby_force_initial_try",
+                     &ScenarioConfig::rugby_force_initial_try)
+      .def_readwrite("rugby_force_forward_pass_scrum",
+                     &ScenarioConfig::rugby_force_forward_pass_scrum)
+      .def_readwrite("rugby_force_knock_on_scrum",
+                     &ScenarioConfig::rugby_force_knock_on_scrum)
       .def_readonly("dynamic_player_selection",
                     &ScenarioConfig::DynamicPlayerSelection)
       .def_readonly("controllable_left_players",
@@ -237,7 +292,14 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .value("e_GameMode_FreeKick", e_GameMode::e_GameMode_FreeKick)
       .value("e_GameMode_Corner", e_GameMode::e_GameMode_Corner)
       .value("e_GameMode_ThrowIn", e_GameMode::e_GameMode_ThrowIn)
-      .value("e_GameMode_Penalty", e_GameMode::e_GameMode_Penalty);
+      .value("e_GameMode_Penalty", e_GameMode::e_GameMode_Penalty)
+      .value("e_GameMode_RugbyKickoff", e_GameMode::e_GameMode_RugbyKickoff)
+      .value("e_GameMode_Ruck", e_GameMode::e_GameMode_Ruck)
+      .value("e_GameMode_Scrum", e_GameMode::e_GameMode_Scrum)
+      .value("e_GameMode_Lineout", e_GameMode::e_GameMode_Lineout)
+      .value("e_GameMode_Conversion", e_GameMode::e_GameMode_Conversion)
+      .value("e_GameMode_DropGoalAttempt",
+             e_GameMode::e_GameMode_DropGoalAttempt);
 
   enum_<Action>("e_BackendAction")
     .value("idle", Action::game_idle)
@@ -272,6 +334,17 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
     .value("release_switch", Action::game_release_switch)
     .value("release_sprint", Action::game_release_sprint)
     .value("release_dribble", Action::game_release_dribble)
+    .value("rugby_pass", Action::game_rugby_pass)
+    .value("spin_pass", Action::game_spin_pass)
+    .value("box_kick", Action::game_box_kick)
+    .value("grubber_kick", Action::game_grubber_kick)
+    .value("tackle", Action::game_tackle)
+    .value("contest", Action::game_contest)
+    .value("bind", Action::game_bind)
+    .value("offload", Action::game_offload)
+    .value("release_tackle", Action::game_release_tackle)
+    .value("release_contest", Action::game_release_contest)
+    .value("release_bind", Action::game_release_bind)
     .value("builtin_ai", Action::game_builtin_ai);
 
   enum_<e_Team>("e_Team")

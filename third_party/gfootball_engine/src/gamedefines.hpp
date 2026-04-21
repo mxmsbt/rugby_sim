@@ -67,7 +67,7 @@ const unsigned int ballHistorySize = 401;
 
 const float ballDistanceOptimizeThreshold = 10.0f;
 
-const int playerNum = 11;
+const int playerNum = MAX_PLAYERS;
 
 // how far into an animation the ball is usually touched
 const unsigned int defaultTouchOffset_ms = 80;
@@ -248,8 +248,9 @@ const float pitchFullHalfH = 40;
 const float lineHalfW = 0.06f;
 
 const float goalDepth = 2.55f;
-const float goalHeight = 2.5f;
-const float goalHalfWidth = 3.7f;
+const float goalHeight = 3.0f;       // rugby crossbar height
+const float goalHalfWidth = 2.82f;   // rugby posts 5.64 m apart
+const float rugbyPostHeight = 8.5f;  // visible post top above ground
 
 const float FORMATION_Y_SCALE = -2.36f;
 

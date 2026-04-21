@@ -120,6 +120,41 @@ def flip_observation(observation, config):
   flipped_observation['ball_owned_team'] = 1 - observation[
       'ball_owned_team'] if observation['ball_owned_team'] > -1 else -1
   flipped_observation['ball_owned_player'] = observation['ball_owned_player']
+  flipped_observation['rugby_breakdown_active'] = observation.get(
+      'rugby_breakdown_active', False)
+  flipped_observation['rugby_breakdown_team'] = (
+      1 - observation['rugby_breakdown_team']
+      if observation.get('rugby_breakdown_team', -1) > -1 else -1)
+  if 'rugby_breakdown_position' in observation:
+    flipped_observation['rugby_breakdown_position'] = rotate_3d_point(
+        observation['rugby_breakdown_position'])
+  flipped_observation['rugby_recycle_receiver_team'] = (
+      1 - observation['rugby_recycle_receiver_team']
+      if observation.get('rugby_recycle_receiver_team', -1) > -1 else -1)
+  if 'rugby_recycle_receiver_position' in observation:
+    flipped_observation['rugby_recycle_receiver_position'] = rotate_3d_point(
+        observation['rugby_recycle_receiver_position'])
+  flipped_observation['rugby_possession_protected_team'] = (
+      1 - observation['rugby_possession_protected_team']
+      if observation.get('rugby_possession_protected_team', -1) > -1 else -1)
+  flipped_observation['rugby_offside_line'] = -observation.get(
+      'rugby_offside_line', 0.0)
+  flipped_observation['rugby_lineout_active'] = observation.get(
+      'rugby_lineout_active', False)
+  flipped_observation['rugby_lineout_team'] = (
+      1 - observation['rugby_lineout_team']
+      if observation.get('rugby_lineout_team', -1) > -1 else -1)
+  flipped_observation['rugby_lineout_winning_team'] = (
+      1 - observation['rugby_lineout_winning_team']
+      if observation.get('rugby_lineout_winning_team', -1) > -1 else -1)
+  flipped_observation['rugby_scrum_active'] = observation.get(
+      'rugby_scrum_active', False)
+  flipped_observation['rugby_scrum_team'] = (
+      1 - observation['rugby_scrum_team']
+      if observation.get('rugby_scrum_team', -1) > -1 else -1)
+  flipped_observation['rugby_scrum_winning_team'] = (
+      1 - observation['rugby_scrum_winning_team']
+      if observation.get('rugby_scrum_winning_team', -1) > -1 else -1)
   flipped_observation['score'] = [
       observation['score'][1], observation['score'][0]
   ]

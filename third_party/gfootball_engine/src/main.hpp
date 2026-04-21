@@ -141,6 +141,8 @@ struct ScenarioConfig {
     right_team.resize(size);
     state->process(left_agents);
     state->process(right_agents);
+    state->process(initial_ball_owner_team);
+    state->process(initial_ball_owner_player);
     state->process(use_magnet);
     state->process(offsides);
     state->process(left_team_difficulty);
@@ -152,6 +154,10 @@ struct ScenarioConfig {
     state->process(game_duration);
     state->process(second_half);
     state->process(control_all_players);
+    state->process(rugby_force_initial_breakdown);
+    state->process(rugby_force_initial_try);
+    state->process(rugby_force_forward_pass_scrum);
+    state->process(rugby_force_knock_on_scrum);
   }
 
   void ProcessState(EnvState* state) {
@@ -176,6 +182,9 @@ struct ScenarioConfig {
   int left_agents = 1;
   // How many right team players are controlled externally.
   int right_agents = 0;
+  // Optional initial explicit ball owner.
+  int initial_ball_owner_team = -1;
+  int initial_ball_owner_player = -1;
   // Whether to use magnet logic (that automatically pushes active player
   // towards the ball).
   bool use_magnet = true;
@@ -199,6 +208,10 @@ struct ScenarioConfig {
   int game_duration = 3000;
   bool control_all_players = false;
   int second_half = 999999999;
+  bool rugby_force_initial_breakdown = false;
+  bool rugby_force_initial_try = false;
+  bool rugby_force_forward_pass_scrum = false;
+  bool rugby_force_knock_on_scrum = false;
 
  private:
   ScenarioConfig() { }

@@ -41,13 +41,6 @@ _unused_engines = []
 _unused_rendering_engine = None
 _active_rendering = False
 
-try:
-  import cv2
-except ImportError:
-  import cv2
-
-
-
 class EnvState(object):
 
   def __init__(self):
@@ -323,6 +316,42 @@ class FootballEnvCore(object):
     result['score'] = [info.left_goals, info.right_goals]
     result['ball_owned_team'] = info.ball_owned_team
     result['ball_owned_player'] = info.ball_owned_player
+    result['rugby_breakdown_active'] = bool(info.rugby_breakdown_active)
+    result['rugby_pending_initial_breakdown'] = bool(
+        info.rugby_pending_initial_breakdown)
+    result['rugby_force_initial_breakdown_config'] = bool(
+        info.rugby_force_initial_breakdown_config)
+    result['rugby_breakdown_team'] = info.rugby_breakdown_team
+    result['rugby_breakdown_position'] = np.array([
+        info.rugby_breakdown_position[0], info.rugby_breakdown_position[1],
+        info.rugby_breakdown_position[2]
+    ])
+    result['rugby_recycle_receiver_team'] = info.rugby_recycle_receiver_team
+    result['rugby_recycle_receiver_position'] = np.array([
+        info.rugby_recycle_receiver_position[0],
+        info.rugby_recycle_receiver_position[1],
+        info.rugby_recycle_receiver_position[2]
+    ])
+    result['rugby_possession_protected_team'] = (
+        info.rugby_possession_protected_team)
+    result['rugby_offside_line'] = info.rugby_offside_line
+    result['rugby_ball_retainer_team'] = info.rugby_ball_retainer_team
+    result['rugby_designated_possession_team'] = (
+        info.rugby_designated_possession_team)
+    result['rugby_is_in_set_piece'] = bool(info.rugby_is_in_set_piece)
+    result['rugby_lineout_active'] = bool(info.rugby_lineout_active)
+    result['rugby_lineout_team'] = info.rugby_lineout_team
+    result['rugby_lineout_winning_team'] = info.rugby_lineout_winning_team
+    result['rugby_scrum_active'] = bool(info.rugby_scrum_active)
+    result['rugby_scrum_team'] = info.rugby_scrum_team
+    result['rugby_scrum_winning_team'] = info.rugby_scrum_winning_team
+    result['rugby_left_team_offside_line'] = info.rugby_left_team_offside_line
+    result['rugby_right_team_offside_line'] = info.rugby_right_team_offside_line
+    result['rugby_left_team_side'] = info.rugby_left_team_side
+    result['rugby_right_team_side'] = info.rugby_right_team_side
+    result['rugby_actual_time_ms'] = info.rugby_actual_time_ms
+    result['rugby_breakdown_start_time_ms'] = (
+        info.rugby_breakdown_start_time_ms)
     result['steps_left'] = self._env.config.game_duration - info.step
     self._observation = result
     self._step = info.step
@@ -435,8 +464,7 @@ class FootballEnvCore(object):
       self._retrieve_observation()
     if mode == 'rgb_array':
       frame = self._observation['frame']
-      b, g, r = cv2.split(frame)
-      return cv2.merge((r, g, b))
+      return frame[..., ::-1]
     elif mode == 'human':
       return True
     return False

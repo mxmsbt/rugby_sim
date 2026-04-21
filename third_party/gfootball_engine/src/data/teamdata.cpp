@@ -285,7 +285,9 @@ TeamData::TeamData(int teamDatabaseID, const std::vector<FormationEntry> &f) {
   playerData.push_back(new PlayerData(290, teamDatabaseID == 3));
   playerData.push_back(new PlayerData(391, teamDatabaseID == 3));
   playerData.push_back(new PlayerData(264, teamDatabaseID == 3));
-  playerData.resize(player_count);
+  while ((int)playerData.size() < player_count) {
+    playerData.push_back(new PlayerData());
+  }
 }
 
 TeamData::~TeamData() {

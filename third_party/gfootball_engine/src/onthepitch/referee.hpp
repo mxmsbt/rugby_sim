@@ -72,6 +72,14 @@ class Referee {
     void BallTouched();
     void TripNotice(Player *tripee, Player *tripper, int tackleType); // 1 == standing tackle resulting in little trip, 2 == standing tackle resulting in fall, 3 == sliding tackle
     bool CheckFoul();
+    bool CheckRugbyBreakdownOffside();
+    bool ResolveRugbyKickoff();
+    bool ResolveRugbyLineout();
+    bool ResolveRugbyScrum();
+    void StartRugbyKickoffRestart(int scoringTeamID,
+                                  const std::string &message = "");
+    void StartRugbyScrum(int feedTeamID, const Vector3 &restartPos,
+                         const std::string &message = "");
 
     Player *GetCurrentFoulPlayer() { DO_VALIDATION; return foul.foulPlayer; }
     int GetCurrentFoulType() { DO_VALIDATION; return foul.foulType; }
@@ -86,6 +94,21 @@ class Referee {
 
     // Players on offside position at the time of the last ball touch.
     std::vector<Player*> offsidePlayers;
+
+    Player *rugbyLastHandTouchPlayer = 0;
+    Vector3 rugbyLastHandTouchPos;
+    unsigned long rugbyLastHandTouchTime_ms = 0;
+    e_TouchType rugbyLastHandTouchType = e_TouchType_None;
+    Player *rugbyPendingKnockOnPlayer = 0;
+    Vector3 rugbyPendingKnockOnPos;
+    unsigned long rugbyPendingKnockOnTime_ms = 0;
+    bool rugbyKickoffRestartActive = false;
+    bool rugbyForcedForwardPassConsumed = false;
+    bool rugbyForcedKnockOnConsumed = false;
+    bool rugbyLineoutBallLaunched = false;
+    Player *rugbyPendingLineoutReceiver = 0;
+    Team *rugbyPendingLineoutTeam = 0;
+    unsigned long rugbyLineoutCatchTime_ms = 0;
 
     Foul foul;
     const bool animations;
