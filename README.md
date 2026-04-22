@@ -28,7 +28,7 @@ computer-vision and analytics models.
 - Open-play mechanics: ball carried in hands at chest height, backward
   passes only, auto-pickup of loose balls, auto-offload when tackled,
   occasional kick-to-touch from deep.
-- 15 players per side, all outfield — no goalkeeper.
+- 15 players per side, all outfield.
 
 **A rugby AI**
 - Carrier sprints toward the opposition try line.
