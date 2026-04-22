@@ -1,17 +1,17 @@
-include gfootball/build_game_engine.*
-recursive-include gfootball/colabs *
-recursive-include gfootball/doc *
-recursive-include gfootball/eval_server/proto *
-recursive-include gfootball/examples *
+include rugby_core/build_game_engine.*
+recursive-include rugby_core/colabs *
+recursive-include rugby_core/doc *
+recursive-include rugby_core/eval_server/proto *
+recursive-include rugby_core/examples *
 
 include Dockerfile Dockerfile_examples .dockerignore CHANGELOG CONTRIBUTING.md requirements.txt run_docker_test.sh
 
 recursive-include third_party/fonts *
-recursive-include third_party/gfootball_engine *
-recursive-exclude third_party/gfootball_engine *.a *.so cmake_install.cmake Makefile
+recursive-include third_party/rugby_engine *
+recursive-exclude third_party/rugby_engine *.a *.so cmake_install.cmake Makefile
 
-prune third_party/gfootball_engine/CMakeFiles
-prune third_party/gfootball_engine/cmake-build-*
-prune third_party/gfootball_engine/build*
-prune third_party/gfootball_engine/.vs*
-prune third_party/gfootball_engine/.idea
+prune third_party/rugby_engine/CMakeFiles
+prune third_party/rugby_engine/cmake-build-*
+prune third_party/rugby_engine/build*
+prune third_party/rugby_engine/.vs*
+prune third_party/rugby_engine/.idea

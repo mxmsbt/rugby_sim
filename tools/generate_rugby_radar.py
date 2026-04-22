@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 W, H = 550, 360
 OUT = Path(
-    "/Users/maximesebti/rugby_sim/third_party/gfootball_engine/data/"
+    "/Users/maximesebti/rugby_sim/third_party/rugby_engine/data/"
     "media/menu/radar/radar.bmp"
 )
 BACKUP = OUT.with_suffix(".bmp.football_backup")

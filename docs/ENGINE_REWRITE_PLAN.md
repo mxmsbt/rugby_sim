@@ -14,11 +14,11 @@ Turn the football-specific engine into a rugby union simulator that supports:
 
 The current engine still contains football semantics in the following layers:
 
-1. `third_party/gfootball_engine/src/onthepitch/match.*`
-2. `third_party/gfootball_engine/src/onthepitch/referee.*`
-3. `third_party/gfootball_engine/src/onthepitch/teamAIcontroller.*`
-4. `third_party/gfootball_engine/src/onthepitch/player/controller/*`
-5. `gfootball/env/*` action, observation, and reward wrappers
+1. `third_party/rugby_engine/src/onthepitch/match.*`
+2. `third_party/rugby_engine/src/onthepitch/referee.*`
+3. `third_party/rugby_engine/src/onthepitch/teamAIcontroller.*`
+4. `third_party/rugby_engine/src/onthepitch/player/controller/*`
+5. `rugby_core/env/*` action, observation, and reward wrappers
 
 ## Current Bootstrap Work
 

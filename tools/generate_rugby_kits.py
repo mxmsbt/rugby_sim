@@ -19,7 +19,7 @@ import numpy as np
 from PIL import Image
 
 KIT_DIR = Path(
-    "/Users/maximesebti/rugby_sim/third_party/gfootball_engine/data/"
+    "/Users/maximesebti/rugby_sim/third_party/rugby_engine/data/"
     "databases/default/images_teams/primeradivision"
 )
 
@@ -97,7 +97,7 @@ def main() -> None:
     # stand-in). Give them a distinct yellow/green kit so the 15 isn't
     # mistaken for an outfielder.
     goalie_src = Path(
-        "/Users/maximesebti/rugby_sim/third_party/gfootball_engine/data/"
+        "/Users/maximesebti/rugby_sim/third_party/rugby_engine/data/"
         "media/objects/players/textures/goalie_kit.bmp"
     )
     generate(

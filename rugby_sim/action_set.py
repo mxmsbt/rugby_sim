@@ -1,19 +1,19 @@
 # coding=utf-8
 """RugbySim action aliases."""
 
-from gfootball.env.football_action_set import action_builtin_ai
-from gfootball.env.football_action_set import action_bind
-from gfootball.env.football_action_set import action_box_kick
-from gfootball.env.football_action_set import action_contest
-from gfootball.env.football_action_set import action_grubber_kick
-from gfootball.env.football_action_set import action_offload
-from gfootball.env.football_action_set import action_release_bind
-from gfootball.env.football_action_set import action_release_contest
-from gfootball.env.football_action_set import action_release_tackle
-from gfootball.env.football_action_set import action_rugby_pass
-from gfootball.env.football_action_set import action_set_dict
-from gfootball.env.football_action_set import action_spin_pass
-from gfootball.env.football_action_set import action_tackle
+from rugby_core.env.rugby_action_set import action_builtin_ai
+from rugby_core.env.rugby_action_set import action_bind
+from rugby_core.env.rugby_action_set import action_box_kick
+from rugby_core.env.rugby_action_set import action_contest
+from rugby_core.env.rugby_action_set import action_grubber_kick
+from rugby_core.env.rugby_action_set import action_offload
+from rugby_core.env.rugby_action_set import action_release_bind
+from rugby_core.env.rugby_action_set import action_release_contest
+from rugby_core.env.rugby_action_set import action_release_tackle
+from rugby_core.env.rugby_action_set import action_rugby_pass
+from rugby_core.env.rugby_action_set import action_set_dict
+from rugby_core.env.rugby_action_set import action_spin_pass
+from rugby_core.env.rugby_action_set import action_tackle
 
 __all__ = [
     "action_builtin_ai",

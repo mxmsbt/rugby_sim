@@ -44,10 +44,10 @@ python3 -m pip install --upgrade pip wheel setuptools
 python3 -m pip install -e .
 ```
 
-The build script (`gfootball/build_game_engine.sh`) compiles the C++
+The build script (`rugby_core/build_game_engine.sh`) compiles the C++
 engine and produces `libgame.dylib` / `_gameplayfootball.so` inside
-`third_party/gfootball_engine/`. `setup.py develop` creates a
-`gfootball_engine/` symlink at the repo root so Python can import it.
+`third_party/rugby_engine/`. `setup.py develop` creates a
+`rugby_engine/` symlink at the repo root so Python can import it.
 
 Prerequisites: CMake, SDL2, Boost. On macOS via Homebrew:
 ```bash

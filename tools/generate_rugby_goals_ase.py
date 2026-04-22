@@ -328,7 +328,7 @@ def degenerate_netting_placeholder(name: str, side_x: float) -> str:
 
 def main() -> None:
     out_path = (
-        "/Users/maximesebti/rugby_sim/third_party/gfootball_engine/data/media/"
+        "/Users/maximesebti/rugby_sim/third_party/rugby_engine/data/media/"
         "objects/stadiums/goals.ase"
     )
     parts: List[str] = [HEADER, MATERIAL_BLOCK]

@@ -13,7 +13,7 @@ import shutil
 from pathlib import Path
 
 ASE_PATH = Path(
-    "/Users/maximesebti/rugby_sim/third_party/gfootball_engine/data/media/"
+    "/Users/maximesebti/rugby_sim/third_party/rugby_engine/data/media/"
     "objects/balls/generic.ase"
 )
 BACKUP_PATH = ASE_PATH.with_suffix(".ase.football_backup")
