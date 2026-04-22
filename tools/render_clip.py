@@ -25,6 +25,7 @@ env = create_environment(
     write_video=True,
     write_full_episode_dumps=True,
     logdir=LOGDIR,
+    other_config_options={"display_game_stats": False},
 )
 
 RUGBY_PASS = 9  # index in the rugby_action_set

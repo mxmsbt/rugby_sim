@@ -333,6 +333,17 @@ struct SharedInfo {
   int rugby_actual_time_ms = 0;
   int rugby_breakdown_start_time_ms = 0;
   int step = 0;
+
+  // Camera parameters (populated every tick so Python can project world
+  // positions to 2D screen-space bboxes matching the format used by
+  // broadcast annotation pipelines).
+  Position camera_position;
+  float camera_orientation[4] = {0.0f, 0.0f, 0.0f, 1.0f};  // quaternion xyzw
+  float camera_fov = 0.0f;
+  float camera_near = 0.0f;
+  float camera_far = 0.0f;
+  int camera_view_width = 0;
+  int camera_view_height = 0;
 };
 
 #endif

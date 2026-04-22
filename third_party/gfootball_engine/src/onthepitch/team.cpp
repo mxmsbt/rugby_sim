@@ -96,7 +96,11 @@ void Team::InitPlayers(boost::intrusive_ptr<Node> fullbodyNode,
       std::string kitFilename;
       // printf("%i player id\n", player->GetID());
       auto formation = GetFormationEntry(player);
-      if (formation.role != e_PlayerRole_GK) {
+      const bool rugbyScenario = match != nullptr && match->IsRugbyScenario();
+      // In rugby all 15 players wear the team jersey — there is no
+      // goalkeeper. Route the GK formation slot to the team kit too so
+      // we only ever see two shirt colours on the field.
+      if (rugbyScenario || formation.role != e_PlayerRole_GK) {
         DO_VALIDATION;
         kitFilename = GetTeamData()->GetKitUrl() + "_kit_0" +
                       int_to_str(GetMenuTask()->GetTeamKitNum(GetID())) +

@@ -26,6 +26,7 @@ env = create_forward_pass_test_environment(
     write_video=True,
     write_full_episode_dumps=True,
     logdir=LOGDIR,
+    other_config_options={"display_game_stats": False},
 )
 
 print("resetting env (AI vs AI, forward_pass scenario)...")

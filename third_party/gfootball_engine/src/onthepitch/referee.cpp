@@ -46,7 +46,6 @@ std::vector<Player *> GetRugbyLineoutLane(Team *team, const Vector3 &restartPos,
   for (Player *player : players) {
     if (player == nullptr || !player->IsActive()) continue;
     if (player == excludePlayer) continue;
-    if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
     lane.push_back(player);
   }
   std::sort(lane.begin(), lane.end(),
@@ -117,7 +116,6 @@ Player *ChooseRugbyLineoutReceiver(Team *team, const Vector3 &restartPos,
   for (Player *player : players) {
     if (player == nullptr || !player->IsActive()) continue;
     if (player == jumper || player == excludePlayer) continue;
-    if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
 
     const Vector3 pos = player->GetPosition();
     const bool isInfield =
@@ -148,7 +146,6 @@ std::vector<Player *> GetRugbyScrumPack(Team *team, const Vector3 &restartPos,
   team->GetActivePlayers(players);
   for (Player *player : players) {
     if (player == nullptr || !player->IsActive()) continue;
-    if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
     pack.push_back(player);
   }
   std::sort(pack.begin(), pack.end(),
@@ -183,7 +180,6 @@ Player *ChooseRugbyScrumReceiver(Team *team, const Vector3 &restartPos,
   float bestScore = 1000.0f;
   for (Player *player : players) {
     if (player == nullptr || !player->IsActive()) continue;
-    if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
     if (std::find(pack.begin(), pack.end(), player) != pack.end()) continue;
     float score = fabs(player->GetPosition().coords[0] - restartPos.coords[0]);
     score += fabs(player->GetPosition().coords[1] - restartPos.coords[1]) * 0.8f;
@@ -414,7 +410,6 @@ bool Referee::ResolveRugbyKickoff() {
   for (Player *player : candidates) {
     if (player == nullptr || !player->IsActive()) continue;
     if (player == taker) continue;
-    if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
     const float distance =
         (player->GetPosition() - buffer.restartPos).GetLength();
     if (distance < bestDistance) {
@@ -648,7 +643,6 @@ bool Referee::ResolveRugbyScrum() {
     for (Player *p : all) {
       if (p == nullptr || !p->IsActive()) continue;
       if (p == receiver) continue;
-      if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
       const Vector3 formation = p->GetFormationEntry().position;
       Vector3 basePos(
           buffer.restartPos.coords[0] +
@@ -751,6 +745,11 @@ void Referee::Process() {
         isFoul = CheckFoul();
       } else {
         foul.foulType = 0;
+      }
+      // In rugby, wait for the conversion kick animation to finish before
+      // scheduling the kickoff restart.
+      if (match->IsRugbyScenario() && match->IsRugbyConversionPending()) {
+        isFoul = true;  // abuse the flag to skip kickoff setup this tick
       }
       if (isFoul == false) {
         DO_VALIDATION;

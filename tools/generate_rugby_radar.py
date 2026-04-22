@@ -134,6 +134,29 @@ def main() -> None:
     for y in (-15, 15):
         dashed_line(draw, fx(-PITCH_HALF_W), fy(y), fx(PITCH_HALF_W), fy(y),
                     dash=4, gap=4, fill=LINE_SOFT)
+    # 5 m insets (tight dotted).
+    for y in (-PITCH_HALF_H + 5, PITCH_HALF_H - 5):
+        dashed_line(draw, fx(-PITCH_HALF_W), fy(y), fx(PITCH_HALF_W), fy(y),
+                    dash=2, gap=3, fill=LINE_SOFT)
+
+    # + tick crosses at key intersections (the distinctive rugby pattern).
+    arm = 4
+    xs = [-PITCH_HALF_W + 5, -22, -10, 0, 10, 22, PITCH_HALF_W - 5]
+    ys = [-15, -(PITCH_HALF_H - 5), 5 - PITCH_HALF_H, PITCH_HALF_H - 5, 15]
+    for xm in xs:
+        for ym in ys:
+            cx, cy = fx(xm), fy(ym)
+            draw.line([(cx - arm, cy), (cx + arm, cy)], fill=LINE, width=1)
+            draw.line([(cx, cy - arm), (cx, cy + arm)], fill=LINE, width=1)
+    # Touchline hash marks every 10 m along both sidelines.
+    hash_len = 4
+    for xm in range(-int(PITCH_HALF_W) + 10, int(PITCH_HALF_W), 10):
+        if abs(xm) < 1:
+            continue
+        cx = fx(xm)
+        for y_touch, sign in [(fy(-PITCH_HALF_H), 1), (fy(PITCH_HALF_H), -1)]:
+            draw.line([(cx, y_touch), (cx, y_touch + sign * hash_len)],
+                      fill=LINE, width=1)
 
     img.save(OUT, format="BMP")
     print(f"wrote {OUT}")

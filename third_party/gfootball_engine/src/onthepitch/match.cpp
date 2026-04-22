@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "../base/geometry/triangle.hpp"
 #include "../base/log.hpp"
@@ -106,7 +107,6 @@ Player *Match::FindRugbyKickAtGoalKicker(Team *team) const {
   float bestScore = -1.0f;
   for (Player *p : players) {
     if (p == nullptr || !p->IsActive()) continue;
-    if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
     const float score = p->GetStat(technical_shot) * 0.7f +
                         p->GetStat(technical_highpass) * 0.3f;
     if (score > bestScore) {
@@ -164,6 +164,99 @@ bool Match::ResolveRugbyKickAtGoal(Team *kickingTeam, const Vector3 &markPos,
   return success;
 }
 
+void Match::UpdateRugbyConversion() {
+  DO_VALIDATION;
+  if (!rugbyConversionPending) return;
+  if (rugbyConversionTeam == nullptr) {
+    rugbyConversionPending = false;
+    return;
+  }
+  const unsigned long elapsed = actualTime_ms - rugbyConversionStartTime_ms;
+
+  // Phase 1 (0–1300 ms): line up. Place the ball on the conversion mark
+  // and stand the kicker a step behind it. Keep pinning them so the
+  // camera reads "setting up the kick".
+  if (elapsed < 1300) {
+    ball->SetPosition(rugbyConversionMark + Vector3(0, 0, 0.13f));
+    ball->SetMomentum(Vector3(0));
+    SetBallRetainer(0);
+    if (rugbyConversionKicker != nullptr) {
+      const Vector3 behind = rugbyConversionMark -
+                             Vector3(rugbyConversionTeam->GetDynamicSide() *
+                                         -0.8f,
+                                     0, 0);
+      rugbyConversionKicker->OffsetPosition(behind -
+                                            rugbyConversionKicker->GetPosition());
+    }
+    return;
+  }
+
+  // Phase 2 (at 1300 ms): launch. Choose a ballistic trajectory that
+  // ends exactly between the posts (success) or drifts off (miss).
+  if (!rugbyConversionLaunched) {
+    const float kGravity = 9.81f;
+    const float targetZ = rugbyConversionSuccess ? 4.5f : 2.2f;  // above/below crossbar
+    const float dx = rugbyConversionTarget.coords[0] -
+                     rugbyConversionMark.coords[0];
+    float dy = rugbyConversionTarget.coords[1] -
+               rugbyConversionMark.coords[1];
+    if (!rugbyConversionSuccess) {
+      // Pull the kick off-target laterally so it misses the posts.
+      dy += (boostrandom(0.0f, 1.0f) < 0.5f ? -6.0f : 6.0f);
+    }
+    const float flightTime = 1.4f;
+    Vector3 velocity(dx / flightTime, dy / flightTime,
+                     (targetZ - 0.13f) / flightTime +
+                         0.5f * kGravity * flightTime);
+    ball->SetPosition(rugbyConversionMark + Vector3(0, 0, 0.13f));
+    ball->SetMomentum(velocity);
+    SetBallRetainer(0);
+    if (rugbyConversionKicker != nullptr) {
+      SetLastTouchTeamID(rugbyConversionTeam->GetID(),
+                         e_TouchType_Intentional_Kicked);
+    }
+    rugbyConversionLaunched = true;
+    return;
+  }
+
+  // Phase 3 (1300–2700 ms): let the ball fly. Nothing to do.
+  if (elapsed < 2700) return;
+
+  // Phase 4: award points (once) and release the kickoff gate.
+  if (!rugbyConversionAwarded) {
+    if (rugbyConversionSuccess) {
+      const int teamID = rugbyConversionTeam->GetID();
+      matchData->SetGoalCount(teamID,
+                              matchData->GetGoalCount(teamID) +
+                                  rugbyConversionAwardPoints);
+      scoreboard->SetGoalCount(teamID, matchData->GetGoalCount(teamID));
+      std::string kickerName;
+      if (rugbyConversionKicker != nullptr) {
+        kickerName = " " + rugbyConversionKicker->GetPlayerData()->GetLastName();
+      }
+      SpamMessage("Conversion GOOD" + kickerName + "! +" +
+                      std::to_string(rugbyConversionAwardPoints),
+                  3500);
+    } else {
+      SpamMessage("Conversion missed", 3000);
+    }
+    rugbyConversionAwarded = true;
+  }
+
+  // Let the ball finish its flight before returning control.
+  if (elapsed < 3500) return;
+
+  rugbyConversionPending = false;
+  rugbyConversionLaunched = false;
+  rugbyConversionAwarded = false;
+  rugbyConversionTeam = 0;
+  rugbyConversionKicker = 0;
+  // Clear the "one-per-try" latch too. Without this, if kickoff's
+  // ResetSituation doesn't run for any reason, the next try's conversion
+  // gets skipped. Re-latched on the next try when it's scored.
+  rugbyConversionAttempted = false;
+}
+
 void Match::RunRugbyAI() {
   DO_VALIDATION;
   if (!IsRugbyScenario() || !IsInPlay() || IsInSetPiece()) return;
@@ -185,7 +278,6 @@ void Match::RunRugbyAI() {
       int chased = 0;
       for (Player *p : players) {
         if (p == nullptr || !p->IsActive()) continue;
-        if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
         if (chased >= 3) break;
         chased++;
         Vector3 toBall = ballPos - p->GetPosition();
@@ -316,7 +408,6 @@ void Match::RunRugbyAI() {
     defendTeam->GetActivePlayers(defenders2);
     for (Player *p : defenders2) {
       if (p == nullptr || !p->IsActive()) continue;
-      if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
       nearestDef = std::min(nearestDef,
                             (p->GetPosition() - carrierPos).GetLength());
     }
@@ -377,7 +468,6 @@ bool Match::TryRugbyPass(int teamID) {
   float bestDist = 22.0f;
   for (Player *p : teammates) {
     if (p == nullptr || p == carrier || !p->IsActive()) continue;
-    if (p->GetFormationEntry().role == e_PlayerRole_GK) continue;
     const float forwardOffset =
         (p->GetPosition().coords[0] - carrierPos.coords[0]) * side;
     if (forwardOffset > 0.2f) continue;  // forward pass forbidden
@@ -555,7 +645,6 @@ Player *Match::GetRugbyRecycleTarget() const {
   for (Player *candidate : candidates) {
     if (candidate == nullptr || !candidate->IsActive()) continue;
     if (candidate == rugbyTackledPlayer) continue;
-    if (candidate->GetFormationEntry().role == e_PlayerRole_GK) continue;
     if ((candidate->GetPosition().coords[0] - rugbyBreakdownPos.coords[0]) *
             side <=
         1.0f) {
@@ -598,7 +687,6 @@ void Match::UpdateRugbyPhase() {
         if (player == rugbyTackledPlayer || player == rugbyTackler) continue;
         if (player == rugbyRecycleReceiver) continue;
         if (player == GetBallRetainer()) continue;
-        if (player->GetFormationEntry().role == e_PlayerRole_GK) continue;
         Vector3 delta = rugbyBreakdownPos - player->GetPosition();
         delta.coords[2] = 0.0f;
         const float distance = delta.GetLength();
@@ -1131,6 +1219,12 @@ void Match::ResetSituation(const Vector3 &focusPos) {
   rugbyPasserPickupLockUntil_ms = 0;
   rugbyPendingPassReceiver = 0;
   rugbyPassInFlightUntil_ms = 0;
+  rugbyConversionPending = false;
+  rugbyConversionLaunched = false;
+  rugbyConversionAwarded = false;
+  rugbyConversionTeam = 0;
+  rugbyConversionKicker = 0;
+  rugbyConversionStartTime_ms = 0;
 
   possessionSideHistory.Clear();
 
@@ -1572,6 +1666,25 @@ void Match::GetState(SharedInfo *state) {
   }
   GetTeamState(state, controller_mapping, first_team);
   GetTeamState(state, controller_mapping, second_team);
+
+  // Camera projection parameters — exposed so Python can build 2D pixel
+  // bboxes in the xyxy format used by broadcast annotators.
+  state->camera_position = Position(cameraNodePosition.coords[0],
+                                    cameraNodePosition.coords[1],
+                                    cameraNodePosition.coords[2]);
+  // The render-facing orientation is cameraNodeOrientation * cameraOrientation
+  // (camera rig pose composed with the camera's own tilt). For projection
+  // we need the composed quaternion.
+  const Quaternion composed = cameraNodeOrientation * cameraOrientation;
+  state->camera_orientation[0] = composed.elements[0];
+  state->camera_orientation[1] = composed.elements[1];
+  state->camera_orientation[2] = composed.elements[2];
+  state->camera_orientation[3] = composed.elements[3];
+  state->camera_fov = cameraFOV;
+  state->camera_near = cameraNearCap;
+  state->camera_far = cameraFarCap;
+  state->camera_view_width = GetGameConfig().render_resolution_x;
+  state->camera_view_height = GetGameConfig().render_resolution_y;
 }
 
 // THE SPICE
@@ -1610,16 +1723,33 @@ bool Match::Process() {
       lastGoalTeam = scoringTeam;
       lastGoalScorer = carrier;
       scoringTeam->GetController()->UpdateTactics();
-      Vector3 conversionMark = ball->Predict(0);
-      conversionMark.coords[0] = scoringTeam->GetDynamicSide() * pitchHalfW;
-      conversionMark.coords[2] = 0.0f;
-      ResolveRugbyKickAtGoal(scoringTeam, conversionMark, 2, "Conversion");
+      const signed int side = scoringTeam->GetDynamicSide();
+      Vector3 tryPos = carrier->GetPosition();
+      Vector3 mark(side * (pitchHalfW - 12.0f),
+                   std::min(std::max(tryPos.coords[1], -pitchHalfH + 5.0f),
+                            pitchHalfH - 5.0f),
+                   0.0f);
+      Vector3 target(side * pitchHalfW, 0.0f, 3.5f);
+      Player *kicker = FindRugbyKickAtGoalKicker(scoringTeam);
+      const float prob = ComputeRugbyKickAtGoalProb(kicker, mark);
+      rugbyConversionPending = true;
+      rugbyConversionSuccess = boostrandom(0.0f, 1.0f) < prob;
+      rugbyConversionLaunched = false;
+      rugbyConversionAwarded = false;
+      rugbyConversionAwardPoints = 2;
+      rugbyConversionTeam = scoringTeam;
+      rugbyConversionKicker = kicker;
+      rugbyConversionMark = mark;
+      rugbyConversionTarget = target;
+      rugbyConversionStartTime_ms = actualTime_ms;
       rugbyConversionAttempted = true;
-      referee->StartRugbyKickoffRestart(
-          scoringTeamID,
-          "TRY for " + GetLastGoalTeam()->GetTeamData()->GetName() + "! " +
-              lastGoalScorer->GetPlayerData()->GetLastName() +
-              " grounds the ball!");
+      SpamMessage("TRY for " + GetLastGoalTeam()->GetTeamData()->GetName() +
+                      "! " +
+                      lastGoalScorer->GetPlayerData()->GetLastName() +
+                      " grounds the ball!",
+                  3500);
+      // Kickoff will be scheduled by the referee once the conversion
+      // animation finishes (gated on IsRugbyConversionPending()).
       rugbyPendingInitialTry = false;
     }
   }
@@ -1729,6 +1859,7 @@ bool Match::Process() {
     }
   }
   UpdateRugbyPhase();
+  UpdateRugbyConversion();
   RunRugbyAI();
 
   BumpActualTime_ms(10);
@@ -1793,12 +1924,29 @@ bool Match::Process() {
         SpamMessage("TRY!", 4000);
       }
       if (!rugbyConversionAttempted) {
-        Vector3 conversionMark = ball->Predict(0);
-        conversionMark.coords[0] =
-            teams[rugby_scoring_team]->GetDynamicSide() * pitchHalfW;
-        conversionMark.coords[2] = 0.0f;
-        ResolveRugbyKickAtGoal(teams[rugby_scoring_team], conversionMark, 2,
-                               "Conversion");
+        Team *scoringTeam = teams[rugby_scoring_team];
+        Vector3 tryPos = ball->Predict(0);
+        const signed int side = scoringTeam->GetDynamicSide();
+        // Conversion taken on a line perpendicular to the try line through
+        // where the ball was grounded, 12 m back from the try line.
+        Vector3 mark(side * (pitchHalfW - 12.0f),
+                     std::min(std::max(tryPos.coords[1],
+                                       -pitchHalfH + 5.0f),
+                              pitchHalfH - 5.0f),
+                     0.0f);
+        Vector3 target(side * pitchHalfW, 0.0f, 3.5f);  // between posts
+        Player *kicker = FindRugbyKickAtGoalKicker(scoringTeam);
+        const float prob = ComputeRugbyKickAtGoalProb(kicker, mark);
+        rugbyConversionPending = true;
+        rugbyConversionSuccess = boostrandom(0.0f, 1.0f) < prob;
+        rugbyConversionLaunched = false;
+        rugbyConversionAwarded = false;
+        rugbyConversionAwardPoints = 2;
+        rugbyConversionTeam = scoringTeam;
+        rugbyConversionKicker = kicker;
+        rugbyConversionMark = mark;
+        rugbyConversionTarget = target;
+        rugbyConversionStartTime_ms = actualTime_ms;
         rugbyConversionAttempted = true;
       }
     } else if (first_team_goal || second_team_goal) {

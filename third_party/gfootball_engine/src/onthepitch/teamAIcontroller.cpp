@@ -748,11 +748,20 @@ void TeamAIController::PrepareSetPiece(e_GameMode setPiece, Team *other_team,
   team->GetActivePlayers(players);
 
   std::vector<Player*>::iterator iter = players.begin();
+  const bool rugbyScenarioHere =
+      team->GetMatch() != nullptr && team->GetMatch()->IsRugbyScenario();
   while (iter != players.end()) {
     DO_VALIDATION;
     Vector3 focus = match->GetBall()->Predict(0).Get2D();
     if ((*iter)->GetFormationEntry().role == e_PlayerRole_GK) {
       DO_VALIDATION;
+      if (rugbyScenarioHere) {
+        // No goalkeeper in rugby. Leave this slot in the regular
+        // positioning pass so it gets treated as an outfield player
+        // (typically the fullback at the back of the backline).
+        iter++;
+        continue;
+      }
       if (setPiece == e_GameMode_KickOff) {
         DO_VALIDATION;
         focus.coords[0] = 0;

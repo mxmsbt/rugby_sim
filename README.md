@@ -1,226 +1,229 @@
 # RugbySim
 
-RugbySim is a fork of `google-research/football` that is being rewritten into a
-15 vs 15 rugby union simulation engine and RL environment.
+**RugbySim** is a 15-a-side rugby-union simulator and machine-learning dataset
+generator. It reuses the rendering + RL scaffolding of Google Research's
+`google-research/football` engine but replaces the match logic, referee,
+AI, set-piece handling, and visual assets with rugby equivalents.
 
-This repository currently preserves the upstream package/build layout while
-introducing RugbySim naming, rugby-oriented action interfaces, and a dedicated
-Python entrypoint under `rugby_sim`.
+The primary goal is to produce **training-data** (broadcast-style
+video + per-frame bounding-box annotations + event timelines) for
+computer-vision and analytics models, in the exact schema used by
+human-annotated real-match footage.
 
-## Status
+<p align="center">
+  <img src="docs/radar_preview.png" alt="rugby pitch markings" width="600">
+</p>
 
-This is an engine rewrite in progress, not a finished rugby simulator yet.
+---
 
-What exists now:
+## What's rugby, not football
 
-- upstream rendering and environment scaffolding
-- a new `rugby_sim.create_environment(...)` entrypoint
-- rugby action names exposed through the Python binding layer
-- an explicit engine rewrite plan in [docs/ENGINE_REWRITE_PLAN.md](docs/ENGINE_REWRITE_PLAN.md)
+| Area | Change |
+|---|---|
+| **Laws & scoring** | Try (5), conversion (2, animated kick), drop goal (3, detected in open play), penalty goal (3, replaces football penalty on ruck offside). Forward-pass and knock-on detection with post-infringement scrum. |
+| **Set pieces** | Rugby scrum (3-2-3 bound pack, visible front-row bind), lineout (2-phase throw arc with probabilistic jump contest), kickoff restart after any score. Post-scrum dispersal so packs don't freeze. |
+| **Open play** | Ball is *carried in hands* at chest height — no foot dribbling. Auto-pickup of loose balls within 1.2 m. Backward-only passes via `TryRugbyPass`. Carrier sprints toward opposition try line; support players form a backward pod; defenders hold a flat line; nearest defender tackles. Auto-offload when cornered. Occasional kick-to-touch when deep in own half → triggers a lineout. |
+| **Goalkeeper** | Removed. All 15 players per team wear the same team jersey and play as outfielders. |
+| **Pitch markings** | Rugby field overlay: halfway, 22 m solid, 10 m dashed, 5 m / 15 m dotted insets, tick crosses at intersections, touchline hash marks, dead-ball lines, in-goal shading. Football centre circle and penalty boxes removed. |
+| **Visuals** | Oval ball mesh, H-post goalposts (procedurally generated `goals.ase`), hooped team jerseys (red vs navy/white), rugby-field radar/minimap. |
+| **Obs space** | Adds `rugby_breakdown_active`, `rugby_scrum_active`, `rugby_lineout_active`, breakdown position, offside line, scrum/lineout winners, actual time, and `camera_*` for 3D→2D projection. |
 
-What still needs substantial work:
+Details of the engine rewrite plan are in
+[`docs/ENGINE_REWRITE_PLAN.md`](docs/ENGINE_REWRITE_PLAN.md).
 
-- tackle, ruck, maul, scrum, and lineout logic
-- rugby scoring and restart laws
-- rugby-specific player roles and team AI
-- rugby observations, scenarios, and rewards
+---
 
-## Quick Start
+## Install
 
-Create a local environment and install from source:
+The native engine is built from source via CMake. On macOS/Linux:
 
-```shell
-python3 -m venv rugby-sim-env
-source rugby-sim-env/bin/activate
-python3 -m pip install --upgrade pip setuptools wheel
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip wheel setuptools
 python3 -m pip install -e .
 ```
 
-Use the rugby entrypoint:
+The build script (`gfootball/build_game_engine.sh`) compiles the C++
+engine and produces `libgame.dylib` / `_gameplayfootball.so` inside
+`third_party/gfootball_engine/`. `setup.py develop` creates a
+`gfootball_engine/` symlink at the repo root so Python can import it.
+
+Prerequisites: CMake, SDL2, Boost. On macOS via Homebrew:
+```bash
+brew install cmake sdl2 sdl2_image sdl2_ttf sdl2_gfx boost
+```
+
+---
+
+## Quick start
 
 ```python
 from rugby_sim import create_environment
 
 env = create_environment(render=False)
+env.reset()
+obs, reward, done, info = env.step([0] * 15)
 ```
 
-## Upstream Provenance
+Scenarios available (all 15 v 15, rugby action set):
 
-This fork inherits code from `google-research/football` and the underlying
-Gameplay Football engine. See [UPSTREAM.md](UPSTREAM.md) for provenance notes.
-
-
-## Quick Start
-
-### In colab
-
-Open our example [Colab](https://colab.research.google.com/github/google-research/football/blob/master/gfootball/colabs/gfootball_example_from_prebuild.ipynb), that will allow you to start training your model in less than 2 minutes.
-
-This method doesn't support game rendering on screen - if you want to see the game running, please use the method below.
-
-### Using Docker
-
-This is the recommended way for Linux-based systems to avoid incompatible package versions.
-Instructions are available [here](gfootball/doc/docker.md).
-
-### On your computer
-
-#### 1. Install required packages
-#### Linux
-```shell
-sudo apt-get install git cmake build-essential libgl1-mesa-dev libsdl2-dev \
-libsdl2-image-dev libsdl2-ttf-dev libsdl2-gfx-dev libboost-all-dev \
-libdirectfb-dev libst-dev mesa-utils xvfb x11vnc python3-pip
-
-python3 -m pip install --upgrade pip setuptools psutil wheel
+```python
+from rugby_sim import (
+    create_environment,                     # full match
+    create_try_restart_test_environment,    # starts with a forced try
+    create_breakdown_test_environment,      # starts at a ruck
+    create_scrum_test_environment,          # starts at a scrum
+    create_lineout_test_environment,        # starts at a lineout
+    create_forward_pass_test_environment,   # forces a forward-pass scrum
+    create_knock_on_test_environment,       # forces a knock-on scrum
+)
 ```
 
-#### macOS
-First install [brew](https://brew.sh/). It should automatically install Command Line Tools.
-Next install required packages:
+Rugby action set (index 0 – 22): `idle`, 8 directional arrows,
+`rugby_pass`, `spin_pass`, `box_kick`, `grubber_kick`, `tackle`,
+`contest`, `bind`, `offload`, `sprint`, `release_*`. See
+`rugby_sim/action_set.py`.
 
-```shell
-brew install git python3 cmake sdl2 sdl2_image sdl2_ttf sdl2_gfx boost boost-python3
+---
 
-python3 -m pip install --upgrade pip setuptools psutil wheel
+## Training-data pipeline
+
+Generate broadcast-style video + per-frame bounding-box annotations
+matching the schema used by human-annotated real footage:
+
+```bash
+python tools/generate_training_data.py --matches 50 --steps 1200 \
+    --fov 22 --height 18 --back-offset 55 \
+    --out ./dataset --render
 ```
 
+Per match you get:
 
-#### Windows
-Install [Git](https://git-scm.com/download/win) and [Python 3](https://www.python.org/downloads/).
-Update pip in the Command Line (here and for the **next steps** type `python` instead of `python3`)
-```commandline
-python -m pip install --upgrade pip setuptools psutil wheel
+```
+dataset/match_NNN/
+├── match_NNN.mp4                  # rendered broadcast video
+├── match_NNN.json                 # per-frame xyxy bbox annotations
+├── match_NNN_events.jsonl         # try/scrum/lineout/breakdown timeline
+└── summary.json                   # score + event counts
+dataset/index.json                 # aggregate across all matches
 ```
 
+**Annotation schema** (identical to the public real-match annotation format used
+by human annotators):
 
-#### 2. Install GFootball
-#### Option a. From PyPi package (recommended)
-```shell
-python3 -m pip install gfootball
+```json
+{
+  "video": "match_000.mp4",
+  "fps": 10,
+  "num_frames": 1200,
+  "width": 1920,
+  "height": 1080,
+  "bbox_format": "xyxy",
+  "coordinates": "absolute_pixels",
+  "frames": [
+    {
+      "frame_number": 0,
+      "objects": [
+        {"bbox": [x1,y1,x2,y2], "class_id": 2, "class": "player",
+         "team": "team_1", "jersey_number": 5},
+        {"bbox": [x1,y1,x2,y2], "class_id": 3, "class": "player",
+         "team": "team_2", "jersey_number": 12},
+        {"bbox": [x1,y1,x2,y2], "class_id": 0, "class": "ball",
+         "team": null, "jersey_number": null}
+      ]
+    }
+  ]
+}
 ```
 
-#### Option b. Installing from sources using GitHub repository 
-(On Windows you have to install additional tools and set an environment variable, see 
-[Compiling Engine](gfootball/doc/compile_engine.md#windows) for detailed instructions.)
+Class IDs: `0 = ball`, `1 = referee` (reserved, not yet emitted),
+`2 = player team_1`, `3 = player team_2`.
 
-```shell
-git clone https://github.com/google-research/football.git
-cd football
+**Event timeline** (JSON-lines): `try`, `conversion`, `try_and_conversion`,
+`kick_goal`, `breakdown_start/end`, `scrum_start/end` (with `winner`),
+`lineout_start/end` (with `winner`), `game_mode` transitions,
+`possession_change`.
+
+---
+
+## QA
+
+Run the single-command health check to verify the sim is ready for
+dataset generation:
+
+```bash
+python tools/qa_report.py
 ```
 
-Optionally you can use [virtual environment](https://docs.python.org/3/tutorial/venv.html):
+Runs 9 deep checks — scenario smoke, 3000-step stability, jersey
+identity, bbox geometry (in-frame + finite), determinism, pipeline
+schema, event-rate sanity, ball tracking, Exeter-Newcastle-schema
+compatibility. Expected output: `VERDICT: READY`.
 
-```shell
-python3 -m venv football-env
-source football-env/bin/activate
+---
+
+## Camera projection
+
+`tools/project_bboxes.py` projects 3-D world positions to 2-D pixel
+boxes in any of the broadcast camera configurations. Useful outside of
+the dataset pipeline:
+
+```python
+from tools.project_bboxes import broadcast_camera_from_obs, frame_bboxes
+
+cam = broadcast_camera_from_obs(obs, fov_deg=22.0,
+                                 height=18.0, back_offset=55.0,
+                                 width=1920, height_px=1080)
+bboxes = frame_bboxes(obs, cam)
+# [{'class':'player','team':'team_1','jersey_number':5,'bbox':[...]}, ...]
 ```
 
-Next, build the game engine and install dependencies:
+The engine's own follow-camera is exposed via `camera_from_obs(obs)`
+(live tracking of ball + attacking player), but the deterministic
+broadcast camera is recommended for reproducible datasets.
 
-```shell
-python3 -m pip install .
+---
+
+## Tools directory
+
+| Tool | Purpose |
+|---|---|
+| `tools/generate_training_data.py` | N-match dataset with video + JSON + events |
+| `tools/generate_rugby_dataset.py` | Lighter-weight per-step parquet + event log |
+| `tools/project_bboxes.py` | 3-D → 2-D pixel-bbox helpers |
+| `tools/qa_report.py` | Single-command readiness check |
+| `tools/render_clip.py` / `render_clip_15s.py` / `render_clip_30s.py` / `render_open_play_15s.py` | Standalone video renders |
+| `tools/generate_rugby_goals_ase.py` | H-post mesh generator (`goals.ase`) |
+| `tools/generate_rugby_kits.py` | Hooped jersey BMP generator |
+| `tools/generate_rugby_radar.py` | Rugby minimap BMP generator |
+| `tools/ovalize_ball_ase.py` | Oval rugby-ball mesh generator |
+
+---
+
+## Tests
+
+```bash
+# All 7 scenarios run clean:
+python tools/qa_report.py
+
+# Individual smoke test:
+python -c "from rugby_sim import create_environment; \
+           env = create_environment(render=False); env.reset(); \
+           [env.step([0]*15) for _ in range(100)]; print('ok')"
 ```
-This command can run for a couple of minutes, as it compiles the C++ environment in the background.
-If you face any problems, first check [Compiling Engine](gfootball/doc/compile_engine.md) documentation and search GitHub issues.
 
+---
 
-#### 3. Time to play!
-```shell
-python3 -m gfootball.play_game --action_set=full
-```
-Make sure to check out the [keyboard mappings](#keyboard-mappings).
-To quit the game press Ctrl+C in the terminal.
+## Attribution
 
-# Contents #
+RugbySim is a fork of
+[`google-research/football`](https://github.com/google-research/football),
+which itself builds on Bastiaan Konings Schuiling's *Gameplay Football*
+engine. See [`UPSTREAM.md`](UPSTREAM.md) for provenance and
+[`NOTICE`](NOTICE) for the formal attribution. Licensed under Apache 2.0
+— see [`LICENSE`](LICENSE).
 
-* [Running training](#training-agents-to-play-GRF)
-* [Playing the game](#playing-the-game)
-    * [Keyboard mappings](#keyboard-mappings)
-    * [Play vs built-in AI](#play-vs-built-in-AI)
-    * [Play vs pre-trained agent](#play-vs-pre-trained-agent)
-    * [Trained checkpoints](#trained-checkpoints)
-* [Environment API](gfootball/doc/api.md)
-* [Observations & Actions](gfootball/doc/observation.md)
-* [Scenarios](gfootball/doc/scenarios.md)
-* [Multi-agent support](gfootball/doc/multi_agent.md)
-* [Running in docker](gfootball/doc/docker.md)
-* [Saving replays, logs, traces](gfootball/doc/saving_replays.md)
-* [Imitation Learning](gfootball/doc/imitation.md)
-
-## Training agents to play GRF
-
-### Run training
-In order to run TF training, you need to install additional dependencies
-
-- Update PIP, so that tensorflow 1.15 is available: `python3 -m pip install --upgrade pip setuptools wheel`
-- TensorFlow: `python3 -m pip install tensorflow==1.15.*` or
-  `python3 -m pip install tensorflow-gpu==1.15.*`, depending on whether you want CPU or
-  GPU version;
-- Sonnet and psutil: `python3 -m pip install dm-sonnet==1.* psutil`;
-- OpenAI Baselines:
-  `python3 -m pip install git+https://github.com/openai/baselines.git@master`.
-
-Then:
-
-- To run example PPO experiment on `academy_empty_goal` scenario, run
-  `python3 -m gfootball.examples.run_ppo2 --level=academy_empty_goal_close`
-- To run on `academy_pass_and_shoot_with_keeper` scenario, run
-  `python3 -m gfootball.examples.run_ppo2 --level=academy_pass_and_shoot_with_keeper`
-
-In order to train with nice replays being saved, run
-`python3 -m gfootball.examples.run_ppo2 --dump_full_episodes=True --render=True`
-
-In order to reproduce PPO results from the paper, please refer to:
-
-- gfootball/examples/repro_checkpoint_easy.sh
-- gfootball/examples/repro_scoring_easy.sh
-
-## Playing the game
-
-Please note that playing the game is implemented through an environment, so human-controlled players use the same interface as the agents.
-One important implication is that there is a single action per 100 ms reported to the environment, which might cause a lag effect when playing.
-
-
-### Keyboard mappings
-The game defines following keyboard mapping (for the `keyboard` player type):
-
-* `ARROW UP` - run to the top.
-* `ARROW DOWN` - run to the bottom.
-* `ARROW LEFT` - run to the left.
-* `ARROW RIGHT` - run to the right.
-* `S` - short pass in the attack mode, pressure in the defense mode.
-* `A` - high pass in the attack mode, sliding in the defense mode.
-* `D` - shot in the attack mode, team pressure in the defense mode.
-* `W` - long pass in the attack mode, goalkeeper pressure in the defense mode.
-* `Q` - switch the active player in the defense mode.
-* `C` - dribble in the attack mode.
-* `E` - sprint.
-
-### Play vs built-in AI
-Run `python3 -m gfootball.play_game --action_set=full`. By default, it starts
-the base scenario and the left player is controlled by the keyboard. Different
-types of players are supported (gamepad, external bots, agents...). For possible
-options run `python3 -m gfootball.play_game -helpfull`.
-
-### Play vs pre-trained agent
-
-In particular, one can play against agent trained with `run_ppo2` script with
-the following command (notice no action_set flag, as PPO agent uses default
-action set):
-`python3 -m gfootball.play_game --players "keyboard:left_players=1;ppo2_cnn:right_players=1,checkpoint=$YOUR_PATH"`
-
-### Trained checkpoints
-We provide trained PPO checkpoints for the following scenarios:
-
-  - [11_vs_11_easy_stochastic](https://storage.googleapis.com/gfootball-public-bucket/trained_model_11_vs_11_easy_stochastic),
-  - [academy_run_to_score_with_keeper](https://storage.googleapis.com/gfootball-public-bucket/trained_model_academy_run_to_score_with_keeper_v2).
-
-In order to see the checkpoints playing, run
-`python3 -m gfootball.play_game --players "ppo2_cnn:left_players=1,policy=gfootball_impala_cnn,checkpoint=$CHECKPOINT" --level=$LEVEL`,
-where `$CHECKPOINT` is the path to downloaded checkpoint. Please note that the checkpoints were trained with Tensorflow 1.15 version. Using 
-different Tensorflow version may result in errors. The easiest way to run these checkpoints is through provided `Dockerfile_examples` image.
-See [running in docker](gfootball/doc/docker.md) for details (just override the default Docker definition with `-f Dockerfile_examples` parameter).
-
-In order to train against a checkpoint, you can pass 'extra_players' argument to create_environment function.
-For example extra_players='ppo2_cnn:right_players=1,policy=gfootball_impala_cnn,checkpoint=$CHECKPOINT'.
+Modified files retain their original Google LLC / Bastiaan Konings
+copyright headers. New rugby-specific files are Apache 2.0 under the
+top-level repository copyright.

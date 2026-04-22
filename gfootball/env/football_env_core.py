@@ -352,6 +352,20 @@ class FootballEnvCore(object):
     result['rugby_actual_time_ms'] = info.rugby_actual_time_ms
     result['rugby_breakdown_start_time_ms'] = (
         info.rugby_breakdown_start_time_ms)
+    # Camera parameters — enable Python-side 3D → 2D projection so the
+    # dataset generator can emit pixel-space bboxes comparable to
+    # broadcast annotator output.
+    result['camera_position'] = np.array([
+        info.camera_position[0], info.camera_position[1],
+        info.camera_position[2]
+    ])
+    result['camera_orientation'] = np.array(
+        list(info.camera_orientation), dtype=np.float32)
+    result['camera_fov'] = float(info.camera_fov)
+    result['camera_near'] = float(info.camera_near)
+    result['camera_far'] = float(info.camera_far)
+    result['camera_view_width'] = int(info.camera_view_width)
+    result['camera_view_height'] = int(info.camera_view_height)
     result['steps_left'] = self._env.config.game_duration - info.step
     self._observation = result
     self._step = info.step

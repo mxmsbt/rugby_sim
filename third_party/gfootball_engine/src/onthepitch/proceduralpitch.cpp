@@ -18,6 +18,7 @@
 #include "proceduralpitch.hpp"
 
 #include <cmath>
+#include <vector>
 
 #include "../misc/perlin.h"
 
@@ -118,20 +119,39 @@ void DrawPitchLine(Vector3 *overlayTex, float *overlayAlphaTex, float x1,
   }
 }
 
+// Draws a short "+" tick at (x, y) with given arm length (metres).
+void DrawPitchTickCross(Vector3 *overlayTex, float *overlayAlphaTex, float x,
+                        float y, float arm, float thickness,
+                        const Vector3 &color) {
+  DrawPitchLine(overlayTex, overlayAlphaTex, x - arm, y, x + arm, y, thickness,
+                color);
+  DrawPitchLine(overlayTex, overlayAlphaTex, x, y - arm, x, y + arm, thickness,
+                color);
+}
+
+// Draws a short perpendicular tick extending from (x0, y) by tickLength in
+// the signed direction (+1 inward from +y touchline, -1 from -y touchline).
+void DrawTouchlineTick(Vector3 *overlayTex, float *overlayAlphaTex, float x,
+                       float y_touch, float inward_sign, float tickLength,
+                       float thickness, const Vector3 &color) {
+  DrawPitchLine(overlayTex, overlayAlphaTex, x, y_touch, x,
+                y_touch + inward_sign * tickLength, thickness, color);
+}
+
 void GenerateRugbyOverlay(Vector3 *overlayTex, float *overlayAlphaTex) {
   for (int i = 0; i < overlayTexW * overlayTexH; ++i) {
     overlayTex[i] = Vector3(0, 0, 0);
     overlayAlphaTex[i] = 0.0f;
   }
   const Vector3 lineColor(240, 240, 236);
-  const float lineThickness = 0.36f;
+  const float lineThickness = 0.18f;
+  const float tickThick = lineThickness * 0.9f;
 
-  // In-goal (try zone) shading — translucent gold between the try line and
-  // the dead-ball line on each end. Sits under the markings so lines show on
-  // top. Uses the full pitch depth (pitchFullHalfH) so the shade reaches the
-  // corner flags.
-  const Vector3 tryZoneColor(212, 175, 55);
-  const float tryZoneAlpha = 0.28f;
+  // In-goal (try zone) shading — subtle darker green between the try line
+  // and the dead-ball line on each end. Sits under the markings so lines
+  // show on top.
+  const Vector3 tryZoneColor(20, 72, 22);
+  const float tryZoneAlpha = 0.70f;
   DrawOverlayRect(overlayTex, overlayAlphaTex,
                   PitchCoordToOverlayX(-pitchFullHalfW),
                   PitchCoordToOverlayY(-pitchHalfH),
@@ -143,43 +163,95 @@ void GenerateRugbyOverlay(Vector3 *overlayTex, float *overlayAlphaTex) {
                   PitchCoordToOverlayX(pitchFullHalfW),
                   PitchCoordToOverlayY(pitchHalfH), tryZoneColor, tryZoneAlpha);
 
+  // Sidelines (touchlines) + try lines (solid, thicker) + dead-ball lines.
   DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -pitchHalfH,
                 pitchHalfW, -pitchHalfH, lineThickness, lineColor);
   DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, pitchHalfH,
                 pitchHalfW, pitchHalfH, lineThickness, lineColor);
+  // Try lines slightly thicker than touchlines, as on real pitches.
   DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -pitchHalfH,
-                -pitchHalfW, pitchHalfH, lineThickness, lineColor);
+                -pitchHalfW, pitchHalfH, lineThickness * 1.15f, lineColor);
   DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW, -pitchHalfH,
-                pitchHalfW, pitchHalfH, lineThickness, lineColor);
+                pitchHalfW, pitchHalfH, lineThickness * 1.15f, lineColor);
+  // Halfway line (solid).
   DrawPitchLine(overlayTex, overlayAlphaTex, 0.0f, -pitchHalfH, 0.0f,
                 pitchHalfH, lineThickness, lineColor);
 
-  const float tenMeter = std::min(10.0f, pitchHalfW - 4.0f);
-  const float twentyTwo = std::min(22.0f, pitchHalfW - 4.0f);
-  DrawPitchLine(overlayTex, overlayAlphaTex, -tenMeter, -pitchHalfH,
-                -tenMeter, pitchHalfH, lineThickness * 0.9f, lineColor, true);
-  DrawPitchLine(overlayTex, overlayAlphaTex, tenMeter, -pitchHalfH, tenMeter,
-                pitchHalfH, lineThickness * 0.9f, lineColor, true);
+  // 10 m lines (short dashes, as in the real pitch).
+  const float tenMeter = 10.0f;
+  for (float x : {-tenMeter, tenMeter}) {
+    DrawPitchLine(overlayTex, overlayAlphaTex, x, -pitchHalfH, x, pitchHalfH,
+                  tickThick, lineColor, true, 1.2f, 1.2f);
+  }
+
+  // 22 m lines (solid).
+  const float twentyTwo = 22.0f;
   DrawPitchLine(overlayTex, overlayAlphaTex, -twentyTwo, -pitchHalfH,
                 -twentyTwo, pitchHalfH, lineThickness, lineColor);
-  DrawPitchLine(overlayTex, overlayAlphaTex, twentyTwo, -pitchHalfH,
-                twentyTwo, pitchHalfH, lineThickness, lineColor);
+  DrawPitchLine(overlayTex, overlayAlphaTex, twentyTwo, -pitchHalfH, twentyTwo,
+                pitchHalfH, lineThickness, lineColor);
 
-  const float fiveMeter = std::min(5.0f, pitchHalfW - 2.0f);
-  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW + fiveMeter,
-                -pitchHalfH, -pitchHalfW + fiveMeter, pitchHalfH,
-                lineThickness * 0.8f, lineColor, true, 1.5f, 1.0f);
-  DrawPitchLine(overlayTex, overlayAlphaTex, pitchHalfW - fiveMeter,
-                -pitchHalfH, pitchHalfW - fiveMeter, pitchHalfH,
-                lineThickness * 0.8f, lineColor, true, 1.5f, 1.0f);
+  // 5 m lines (dashed, close to each try line).
+  const float fiveMeter = 5.0f;
+  for (float x : {-pitchHalfW + fiveMeter, pitchHalfW - fiveMeter}) {
+    DrawPitchLine(overlayTex, overlayAlphaTex, x, -pitchHalfH, x, pitchHalfH,
+                  tickThick, lineColor, true, 0.9f, 1.1f);
+  }
 
-  const float fifteenInset = std::min(15.0f, pitchHalfH - 2.0f);
-  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, -fifteenInset,
-                pitchHalfW, -fifteenInset, lineThickness * 0.7f, lineColor,
-                true, 1.6f, 1.1f);
-  DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, fifteenInset,
-                pitchHalfW, fifteenInset, lineThickness * 0.7f, lineColor,
-                true, 1.6f, 1.1f);
+  // 15 m inset dashed lines parallel to touch (mark the lineout alley
+  // boundary).
+  const float fifteenInset = 15.0f;
+  for (float y : {-fifteenInset, fifteenInset}) {
+    DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, y, pitchHalfW, y,
+                  tickThick * 0.95f, lineColor, true, 1.8f, 1.2f);
+  }
+
+  // 5 m inset dashed lines parallel to touch (for the 5 m lineout alley).
+  const float fiveInset = 5.0f;
+  for (float y : {-pitchHalfH + fiveInset, pitchHalfH - fiveInset}) {
+    DrawPitchLine(overlayTex, overlayAlphaTex, -pitchHalfW, y, pitchHalfW, y,
+                  tickThick * 0.85f, lineColor, true, 0.9f, 1.0f);
+  }
+
+  // Perpendicular tick crosses at the intersections of the 5 m and 15 m
+  // inset lines with the 22 m / 10 m / halfway / 5 m-from-try lines. This
+  // is the distinctive dotted-cross pattern seen on real rugby pitches.
+  const float crossArm = 0.45f;
+  std::vector<float> crossXs = {-(pitchHalfW - fiveMeter), -twentyTwo,
+                                -tenMeter, 0.0f, tenMeter, twentyTwo,
+                                pitchHalfW - fiveMeter};
+  std::vector<float> crossYs = {-fifteenInset, -fiveInset,
+                                -(pitchHalfH - fiveInset),
+                                pitchHalfH - fiveInset, fiveInset,
+                                fifteenInset};
+  for (float x : crossXs) {
+    for (float y : crossYs) {
+      DrawPitchTickCross(overlayTex, overlayAlphaTex, x, y, crossArm,
+                         tickThick, lineColor);
+    }
+  }
+
+  // Touchline hash marks: short perpendicular ticks every 10 m along each
+  // sideline, protruding 0.6 m inward. Gives the pitch its "measured"
+  // look without being noisy.
+  const float hashLen = 0.6f;
+  for (float x = -pitchHalfW + 10.0f; x <= pitchHalfW - 10.0f; x += 10.0f) {
+    if (std::fabs(x) < 0.5f) continue;  // skip halfway (already a line)
+    DrawTouchlineTick(overlayTex, overlayAlphaTex, x, -pitchHalfH, 1.0f,
+                      hashLen, tickThick, lineColor);
+    DrawTouchlineTick(overlayTex, overlayAlphaTex, x, pitchHalfH, -1.0f,
+                      hashLen, tickThick, lineColor);
+  }
+
+  // Goal-line hash marks on each try line: 5 m and 15 m ticks into the
+  // field so the lineout-throw channel is visually marked.
+  for (float x : {-pitchHalfW, pitchHalfW}) {
+    const float sign = (x > 0.0f) ? -1.0f : 1.0f;
+    for (float y : {-fifteenInset, -fiveInset, fiveInset, fifteenInset}) {
+      DrawPitchLine(overlayTex, overlayAlphaTex, x, y,
+                    x + sign * hashLen * 1.4f, y, tickThick, lineColor);
+    }
+  }
 
   // Dead-ball lines at the back of each in-goal area.
   DrawPitchLine(overlayTex, overlayAlphaTex, -pitchFullHalfW, -pitchHalfH,

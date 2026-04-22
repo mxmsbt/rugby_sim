@@ -133,6 +133,8 @@ class Match {
                                 int awardPoints, const std::string &label);
     bool TryRugbyPass(int teamID);
     void RunRugbyAI();
+    void UpdateRugbyConversion();
+    bool IsRugbyConversionPending() const { return rugbyConversionPending; }
     bool IsRugbyBreakdownActive() const { DO_VALIDATION; return rugbyBreakdownActive; }
     bool IsRugbyRetainBlockedFor(const Team *team) const {
       DO_VALIDATION;
@@ -289,6 +291,16 @@ class Match {
     unsigned long rugbyPasserPickupLockUntil_ms = 0;
     Player *rugbyPendingPassReceiver = 0;
     unsigned long rugbyPassInFlightUntil_ms = 0;
+    bool rugbyConversionPending = false;
+    bool rugbyConversionSuccess = false;
+    bool rugbyConversionLaunched = false;
+    bool rugbyConversionAwarded = false;
+    int rugbyConversionAwardPoints = 2;
+    Team *rugbyConversionTeam = 0;
+    Player *rugbyConversionKicker = 0;
+    Vector3 rugbyConversionMark;
+    Vector3 rugbyConversionTarget;
+    unsigned long rugbyConversionStartTime_ms = 0;
 
     std::deque<Vector3> camPos;
 

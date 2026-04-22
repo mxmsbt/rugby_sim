@@ -167,7 +167,20 @@ BOOST_PYTHON_MODULE(_gameplayfootball) {
       .add_property("left_controllers", &SharedInfo::left_controllers)
       .add_property("right_controllers", &SharedInfo::right_controllers)
       .def_readonly("game_mode", &SharedInfo::game_mode)
-      .def_readonly("step", &SharedInfo::step);
+      .def_readonly("step", &SharedInfo::step)
+      .def_readonly("camera_position", &SharedInfo::camera_position)
+      .add_property("camera_orientation",
+                    make_function(+[](const SharedInfo &s) {
+                      list out;
+                      for (int i = 0; i < 4; ++i)
+                        out.append(s.camera_orientation[i]);
+                      return out;
+                    }))
+      .def_readonly("camera_fov", &SharedInfo::camera_fov)
+      .def_readonly("camera_near", &SharedInfo::camera_near)
+      .def_readonly("camera_far", &SharedInfo::camera_far)
+      .def_readonly("camera_view_width", &SharedInfo::camera_view_width)
+      .def_readonly("camera_view_height", &SharedInfo::camera_view_height);
 
   enum_<GameState>("GameState")
       .value("game_created", GameState::game_created)

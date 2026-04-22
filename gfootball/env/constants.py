@@ -40,5 +40,7 @@ EXPOSED_OBSERVATIONS = frozenset({
     'rugby_scrum_winning_team',
     'rugby_left_team_offside_line', 'rugby_right_team_offside_line',
     'rugby_left_team_side', 'rugby_right_team_side',
-    'rugby_actual_time_ms', 'rugby_breakdown_start_time_ms'
+    'rugby_actual_time_ms', 'rugby_breakdown_start_time_ms',
+    'camera_position', 'camera_orientation', 'camera_fov', 'camera_near',
+    'camera_far', 'camera_view_width', 'camera_view_height',
 })
